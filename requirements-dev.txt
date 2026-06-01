@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2024-2026 FreeSDN
+#
+# Exact-version pins for development/test tooling (FSDN-POSTFIX-013).
+# Install alongside requirements.txt for a full dev environment.
+
+# Testing
+pytest==9.1.1
+pytest-qt==4.5.0
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+
+# Code Quality
+black==26.5.1
+ruff==0.15.20
+mypy==2.1.0
+pre-commit==4.6.0
+
+# Type Stubs
+types-appdirs==1.4.3.5
+
+# Build & Packaging
+pyinstaller==6.21.0

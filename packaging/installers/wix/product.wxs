@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FreeSDN Agent — WiX v4 MSI Template
+
+  Variables (passed via -d flag):
+    Version       - e.g. "0.4.0"
+    BinaryPath    - absolute path to freesdn-agent.exe
+    ProductName   - "FreeSDN Agent"
+    Manufacturer  - "FreeSDN Team"
+    UpgradeCode   - GUID for upgrade detection
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="$(var.ProductName)"
+    Version="$(var.Version)"
+    Manufacturer="$(var.Manufacturer)"
+    UpgradeCode="$(var.UpgradeCode)"
+    Scope="perMachine"
+    InstallerVersion="500">
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed."
+      AllowSameVersionUpgrades="yes" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Directory structure -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="FreeSDN">
+        <Directory Id="AGENTFOLDER" Name="Agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Components -->
+    <ComponentGroup Id="AgentComponents" Directory="AGENTFOLDER">
+      <Component Id="AgentBinary" Guid="*">
+        <File Id="FreesdnAgentExe"
+              Source="$(var.BinaryPath)"
+              Name="freesdn-agent.exe"
+              KeyPath="yes" />
+
+        <!-- Add to system PATH -->
+        <Environment Id="PATH"
+                     Name="PATH"
+                     Value="[AGENTFOLDER]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Features -->
+    <Feature Id="MainFeature" Title="FreeSDN Agent" Level="1">
+      <ComponentGroupRef Id="AgentComponents" />
+    </Feature>
+
+    <!-- UI: minimal (no dialogs, just progress bar) -->
+    <UIRef Id="WixUI_Minimal" />
+
+    <!-- License -->
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+
+  </Package>
+</Wix>

@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2024-2026 FreeSDN
+#
+# Exact-version pins for the FreeSDN agent (FSDN-POSTFIX-013 supply-chain fix).
+# All dependencies are pinned to == so dev installs are reproducible.
+# For release builds use requirements-release.txt (which will carry --hash=sha256
+# annotations once generated via pip-compile --generate-hashes).
+
+# Qt Framework (desktop only; excluded from daemon builds via [daemon] extra)
+PySide6==6.11.1
+
+# Network Scanning
+netifaces==0.11.0
+
+# Optional L2 capture ([capture] extra). scapy is GPL-2.0-only: installing it
+# subjects that deployment to GPL-2.0 (the default agent is MIT). Use is lazy &
+# guarded — absent, ARP/LLDP/CDP/DHCP capture auto-disable; the agent still runs.
+# NOT included in the base requirements-release.txt lock; ship via a separate
+# requirements-capture.txt if L2 capture is needed.
+scapy==2.7.0
+
+# Protocol-Specific Discovery
+wsdiscovery==2.1.2
+zeroconf==0.150.0
+async-upnp-client==0.47.0
+pysnmp==7.1.27
+
+# HTTP/WebSocket Client
+httpx==0.28.1
+websockets==16.0
+
+# Data Validation & Models
+pydantic==2.13.4
+
+# Secure Credential Storage
+keyring==25.7.0
+
+# Platform Directories
+appdirs==1.4.4
+
+# MAC Vendor Lookup (OUI Database)
+mac-vendor-lookup==0.1.15
+
+# Process / system info
+psutil==7.2.2
+
+# Async Compatibility
+anyio==4.14.1
+
+# Security-pinned transitives (Dependabot GHSA fixes). Pulled in transitively but
+# pinned explicitly to force the patched versions. After changing, regenerate the
+# hash-locked requirements-release.txt (uv/pip-compile --generate-hashes) and run
+# the agent test suite — these are the SHIPPED versions.
+cryptography==49.0.0
+aiohttp==3.14.1

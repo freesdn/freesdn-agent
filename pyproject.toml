@@ -1,0 +1,185 @@
+[build-system]
+requires = ["setuptools>=78.1.1", "wheel>=0.46.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freesdn-agent"
+version = "1.0.0"
+description = "Network discovery agent and desktop tool for FreeSDN platform"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "FreeSDN Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+keywords = ["network", "discovery", "sdn", "agent", "daemon"]
+
+dependencies = [
+    # Qt Framework (desktop only; daemon builds use [daemon] extra which omits this)
+    # FSDN-POSTFIX-013: all versions pinned to exact == for supply-chain safety.
+    # Update in lockstep with requirements.txt and requirements-release.txt.
+    "PySide6==6.11.1",
+
+    # Network Scanning
+    # NOTE: scapy moved to the optional [capture] extra — it is GPL-2.0-only and
+    # would override this package's MIT license if bundled by default. All scapy
+    # use is lazy/guarded; without it, L2 capture features auto-disable.
+    "netifaces==0.11.0",
+
+    # Protocol-Specific
+    "wsdiscovery==2.1.2",
+    "zeroconf==0.150.0",
+    "async-upnp-client==0.47.0",
+    "pysnmp==7.1.27",
+
+    # HTTP/WebSocket
+    "httpx==0.28.1",
+    "websockets==16.0",
+
+    # Utilities
+    "pydantic==2.13.4",
+    "keyring==25.7.0",
+    "appdirs==1.4.4",
+    "mac-vendor-lookup==0.1.15",
+    "psutil==7.2.2",
+
+    # Async
+    "anyio==4.14.1",
+
+    # Security-pinned transitives (Dependabot GHSA fixes). These are pulled in
+    # transitively; pinned explicitly here to force the patched versions into the
+    # lock. Regenerate requirements-release.txt (uv/pip-compile --generate-hashes)
+    # and run the agent test suite after any change here.
+    "cryptography==49.0.0",  # GHSA: high
+    "aiohttp==3.14.1",       # GHSA: medium
+]
+
+[project.optional-dependencies]
+# Minimal install for headless daemon (no Qt)
+# FSDN-POSTFIX-013: pinned to exact == — keep in sync with the main deps list above.
+daemon = [
+    "netifaces==0.11.0",
+    "wsdiscovery==2.1.2",
+    "zeroconf==0.150.0",
+    "async-upnp-client==0.47.0",
+    "pysnmp==7.1.27",
+    "httpx==0.28.1",
+    "websockets==16.0",
+    "pydantic==2.13.4",
+    "keyring==25.7.0",
+    "appdirs==1.4.4",
+    "mac-vendor-lookup==0.1.15",
+    "psutil==7.2.2",
+    "anyio==4.14.1",
+    # Security-pinned transitives (Dependabot GHSA fixes) — keep in sync with the
+    # main dependencies list above and requirements.txt.
+    "cryptography==49.0.0",
+    "aiohttp==3.14.1",
+]
+# Optional L2 capture: ARP scan + LLDP/CDP/DHCP passive discovery.
+# scapy is GPL-2.0-only — installing this extra subjects that deployment to
+# GPL-2.0, unlike the default MIT agent. All scapy use is lazy and guarded, so
+# without this extra these features auto-disable and the rest of the agent runs.
+capture = [
+    "scapy==2.7.0",
+]
+# Build toolchain for release artifacts (PyInstaller). Pinned + hash-locked in
+# requirements-release.txt (FSDN-POSTFIX-013).
+build = [
+    "pyinstaller==6.21.0",
+]
+dev = [
+    "pytest==9.1.1",
+    "pytest-qt==4.5.0",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "black==26.5.1",
+    "ruff==0.15.20",
+    "mypy==2.1.0",
+    "pre-commit==4.6.0",
+    "pyinstaller==6.21.0",
+]
+
+[project.scripts]
+freesdn-agent = "freesdn_agent.daemon.cli:main"
+
+[project.gui-scripts]
+freesdn-agent-gui = "freesdn_agent.main:main"
+
+[project.urls]
+Homepage = "https://github.com/freesdn/freesdn-agent"
+Documentation = "https://docs.freesdn.org"
+Repository = "https://github.com/freesdn/freesdn-agent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+freesdn_agent = [
+    "ui/styles/*.qss",
+    "ui/resources/icons/*",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # function call in default argument
+]
+
+[tool.ruff.isort]
+known-first-party = ["freesdn_agent"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "scapy.*",
+    "netifaces.*",
+    "wsdiscovery.*",
+    "mac_vendor_lookup.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+qt_api = "pyside6"
