@@ -51,5 +51,5 @@ anyio==4.14.1
 # pinned explicitly to force the patched versions. After changing, regenerate the
 # hash-locked requirements-release.txt (uv/pip-compile --generate-hashes) and run
 # the agent test suite — these are the SHIPPED versions.
-cryptography==49.0.0
+cryptography==50.0.0
 aiohttp==3.14.1
