@@ -5,6 +5,43 @@ All notable changes to the FreeSDN Agent are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-08-23
+
+Windows. Found by looking at a screenshot of the running GUI rather than at the
+code, which is the only way this one surfaces: on Linux the same code is right.
+
+### Fixed
+
+- **The interface list showed adapter GUIDs.** ``netifaces`` returns
+  ``{37217669-42DA-4657-A55B-0D995D328250}`` on Windows, and the GUI printed it.
+  The daemon already had a registry lookup that turns those into ``Ethernet`` /
+  ``Tailscale``, but it was private to the capability advertiser, where the GUI
+  -- the only place an operator actually reads these -- could not reach it.
+
+- **Hyper-V and WSL switches were scanned by default.** The filter that keeps
+  virtual adapters out of a scan matched against that same GUID, so on Windows
+  it never fired once. Measured on a real host: a default Quick Scan covered
+  8,443 addresses, of which 254 were the operator's actual LAN and 8,188 were
+  two ``vEthernet`` /20s with nothing behind them. Now 254, and the virtual
+  adapters arrive unchecked and labelled.
+
+- **A scan that named an interface and gave no targets scanned nothing.** This
+  one was never Windows-specific. ``targets = job.targets or [interface]`` handed
+  the scanner the interface NAME, and a name parses to zero addresses -- so the
+  scan logged "No valid IPs to scan", reported success, and found nothing. Every
+  scheduled scan without explicit targets did exactly this. The comment on the
+  line already said "default to interface subnet"; now the code does.
+
+### Changed
+
+- The three jobs an interface name was doing -- label, virtual-adapter hint,
+  and stand-in for a subnet -- are one implementation in ``utils/netiface.py``,
+  and the GUI keeps the identifier and the label as separate fields, because the
+  scanners need the first and people need the second. A test fails if the
+  registry lookup is ever copied back out.
+
+- 30 more tests (187 to 217). Each fix was verified by reintroducing it.
+
 ## [1.0.1] - 2026-08-23
 
 Fix release. Every fault below is present in the shipped v1.0.0 binaries.

@@ -107,11 +107,7 @@ class TestWindowsFriendlyNameResolution:
         with (
             patch.dict("sys.modules", {"netifaces": fake_netifaces}),
             patch.object(cap, "platform") as mock_platform,
-            patch.object(
-                cap,
-                "_resolve_windows_friendly_name",
-                return_value="Ethernet",
-            ),
+            patch.object(cap, "friendly_name", return_value="Ethernet"),
         ):
             mock_platform.system.return_value = "Windows"
             result = cap._list_interfaces()
@@ -119,7 +115,12 @@ class TestWindowsFriendlyNameResolution:
 
     def test_guid_kept_when_registry_lookup_fails(self) -> None:
         """If the registry path is missing or unreadable, fall back to
-        the raw GUID so the operator at least sees *something*."""
+        the raw GUID so the operator at least sees *something*.
+
+        The resolver now lives in ``utils.netiface`` so the GUI shares it, and
+        it returns the identifier unchanged rather than None -- the ``or iface``
+        that used to sit at this call site was the kind of thing each caller had
+        to remember separately."""
         from freesdn_agent.services import capabilities as cap
 
         guid = "{37217669-42DA-4657-A55B-0D995D328250}"
@@ -132,11 +133,7 @@ class TestWindowsFriendlyNameResolution:
         with (
             patch.dict("sys.modules", {"netifaces": fake_netifaces}),
             patch.object(cap, "platform") as mock_platform,
-            patch.object(
-                cap,
-                "_resolve_windows_friendly_name",
-                return_value=None,
-            ),
+            patch.object(cap, "friendly_name", side_effect=lambda i: i),
         ):
             mock_platform.system.return_value = "Windows"
             result = cap._list_interfaces()

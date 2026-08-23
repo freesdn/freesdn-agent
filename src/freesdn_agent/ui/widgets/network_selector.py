@@ -9,6 +9,8 @@ import logging
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox
 
+from freesdn_agent.utils.netiface import friendly_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,10 +20,18 @@ def get_network_interfaces() -> list[dict]:
 
     Returns:
         List of dicts with interface info:
-        - name: Interface name (e.g., "Ethernet", "eth0")
+        - name: the netifaces IDENTIFIER, which is what the scanners take.
+          On Windows this is an adapter GUID, not a readable name.
+        - label: the same adapter as an operator would recognise it
+          ("Ethernet", "Tailscale", "eth0"). Display this; never pass it
+          to a scanner.
         - ip: IP address
         - netmask: Network mask
         - network: Network address (e.g., "192.168.1.0/24")
+
+    The two were one field until the GUI started showing operators
+    ``{37217669-42DA-4657-A55B-0D995D328250}``. They cannot be merged: the
+    scanners need the identifier and people need the name.
     """
     interfaces = []
 
@@ -47,6 +57,7 @@ def get_network_interfaces() -> list[dict]:
 
                         interfaces.append({
                             "name": iface_name,
+                            "label": friendly_name(iface_name),
                             "ip": ip,
                             "netmask": netmask,
                             "network": network,
@@ -60,6 +71,7 @@ def get_network_interfaces() -> list[dict]:
         # Fallback: just detect something
         interfaces.append({
             "name": "Unknown",
+            "label": "Unknown",
             "ip": "0.0.0.0",
             "netmask": "255.255.255.0",
             "network": "0.0.0.0/24",

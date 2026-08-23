@@ -12,6 +12,7 @@ from PySide6.QtCore import QMutex, QMutexLocker, QObject, QThread, Signal, Slot
 
 from freesdn_agent.core.config import Config, get_config
 from freesdn_agent.scanners.base import BaseScanner, ScanProgress, ScanResult
+from freesdn_agent.utils.netiface import interface_networks
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,13 @@ class ScanWorker(QObject):
                         logger.info(f"Running {scanner_name} on {interface}")
 
                         # Get targets (use job targets or default to interface subnet)
-                        targets = self.job.targets or [interface]
+                        targets = self.job.targets or interface_networks(interface)
+                        if not targets:
+                            logger.warning(
+                                f"Skipping {scanner_name} on {interface!r}: no targets "
+                                "given and no network could be derived from it"
+                            )
+                            continue
                         logger.info(f"Scan targets: {targets}")
 
                         # Execute scan with progress callback

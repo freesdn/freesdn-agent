@@ -14,6 +14,7 @@ from enum import Enum
 
 from freesdn_agent.core.config import Config, get_config
 from freesdn_agent.scanners.base import BaseScanner, ScanProgress, ScanResult
+from freesdn_agent.utils.netiface import interface_networks
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,13 @@ class AsyncScanManager:
                     if self._cancelled:
                         break
 
-                    targets = job.targets or [interface]
+                    targets = job.targets or interface_networks(interface)
+                    if not targets:
+                        logger.warning(
+                            "Skipping %s on %r: no targets given and no network could be "
+                            "derived from it", scanner_name, interface,
+                        )
+                        continue
                     logger.info("Running %s on %s (targets: %s)", scanner_name, interface, targets)
 
                     # Run the blocking generator in the executor

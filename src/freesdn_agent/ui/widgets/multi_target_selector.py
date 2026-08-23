@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import re
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont, QResizeEvent
@@ -47,6 +46,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from freesdn_agent.utils.netiface import is_overlay
 
 logger = logging.getLogger(__name__)
 
@@ -212,10 +213,11 @@ def _list_routed_destinations() -> list[str]:
 # Widget
 # ---------------------------------------------------------------------------
 
-_OVERLAY_HINTS = re.compile(
-    r"(tailscale|wireguard|tap|tun|docker|veth|br-|hyper-v|wsl|vmnet|vpn)",
-    re.IGNORECASE,
-)
+# Overlay detection lives in utils.netiface so it is matched against the
+# FRIENDLY name. Matched against the raw netifaces identifier -- an adapter
+# GUID on Windows -- it never fired once, so every Hyper-V and WSL switch
+# arrived pre-checked and a default scan spent itself on a /20 with nothing
+# behind it.
 
 
 class MultiTargetSelector(QFrame):
@@ -415,26 +417,28 @@ class MultiTargetSelector(QFrame):
         self._interfaces = get_network_interfaces()
 
         for iface in self._interfaces:
-            name = iface["name"]
+            # "name" is the scanner's identifier, "label" is the operator's.
+            label = iface.get("label") or iface["name"]
             ip = iface["ip"]
             network = iface["network"]
             cidr_suffix = network.split("/")[-1] if "/" in network else "?"
             is_single_host = cidr_suffix == "32"
-            is_overlay = bool(_OVERLAY_HINTS.search(name))
+            overlay = is_overlay(label)
 
             # Two-line item: friendlier name on top, details below.
             warn = ""
             if is_single_host:
                 warn = "   ⚠ single-host (won't find peers)"
-            elif is_overlay:
-                warn = "   ⚠ overlay interface"
+            elif overlay:
+                warn = "   ⚠ virtual adapter, no LAN behind it"
 
-            label = f"{name}\n    {ip}   /{cidr_suffix}{warn}"
-            item = QListWidgetItem(label)
+            item = QListWidgetItem(
+                f"{label}\n    {ip}   /{cidr_suffix}{warn}"
+            )
             item.setData(Qt.UserRole, iface)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(
-                Qt.Unchecked if (is_single_host or is_overlay) else Qt.Checked
+                Qt.Unchecked if (is_single_host or overlay) else Qt.Checked
             )
             self._iface_list.addItem(item)
 

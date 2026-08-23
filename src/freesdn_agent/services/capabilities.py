@@ -18,6 +18,8 @@ import logging
 import platform
 import sys
 
+from freesdn_agent.utils.netiface import friendly_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,31 +42,6 @@ def _has_raw_socket_privilege() -> bool:
     from freesdn_agent.utils.privileges import has_raw_socket_capability
 
     return has_raw_socket_capability()
-
-
-def _resolve_windows_friendly_name(guid: str) -> str | None:
-    """Map a Windows interface GUID to its friendly name via the registry.
-
-    netifaces returns adapter GUIDs on Windows (e.g.
-    ``{37217669-42DA-4657-A55B-0D995D328250}``) which are useless to a
-    human reading the agent capability advertisement. The friendly
-    name (``Ethernet``, ``Wi-Fi``) lives in the registry at
-    ``HKLM\\SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-...}\\<GUID>\\Connection``.
-    """
-    if platform.system() != "Windows":
-        return None
-    try:
-        import winreg
-        key_path = (
-            r"SYSTEM\CurrentControlSet\Control\Network"
-            r"\{4D36E972-E325-11CE-BFC1-08002BE10318}"
-            f"\\{guid}\\Connection"
-        )
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
-            name, _ = winreg.QueryValueEx(key, "Name")
-            return str(name) if name else None
-    except Exception:
-        return None
 
 
 def _list_interfaces() -> list[str]:
@@ -100,7 +77,7 @@ def _list_interfaces() -> list[str]:
             if not usable_v4:
                 continue
 
-            friendly = _resolve_windows_friendly_name(iface) or iface
+            friendly = friendly_name(iface)
             if (
                 platform.system() == "Windows"
                 and friendly.lower().startswith("loopback")
