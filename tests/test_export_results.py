@@ -63,9 +63,21 @@ class _Result:
 
 
 def _has_qt() -> bool:
+    """Whether Qt can actually be USED here, not merely imported.
+
+    ``import PySide6`` is not the question. The package imports fine on a
+    headless CI runner and then loading a widget module dies on
+    ``libEGL.so.1: cannot open shared object file`` -- the Python package is
+    installed, the system libraries behind it are not. Guarding on the import
+    alone turned these two skips into two failures the moment CI installed the
+    dev extras, which is how the public agent repo went red on its first run.
+
+    Importing QtWidgets is the cheapest thing that forces the shared libraries
+    to load, and it is what ``main_window`` needs anyway.
+    """
     try:
-        import PySide6  # noqa: F401
-    except ImportError:
+        from PySide6 import QtWidgets  # noqa: F401
+    except Exception:
         return False
     return True
 
@@ -137,7 +149,7 @@ def test_the_rows_round_trip_through_the_csv_module():
     assert read_back[1]["hostname"] == "cam,02", "the comma was not quoted"
 
 
-@pytest.mark.skipif(not _has_qt(), reason="PySide6 is an optional extra and CI does not install it")
+@pytest.mark.skipif(not _has_qt(), reason="Qt is not usable here (no PySide6, or no system Qt libraries)")
 def test_the_handler_is_no_longer_a_stub():
     """
     The item enables itself after any successful scan, so a `pass` here is a
@@ -153,7 +165,7 @@ def test_the_handler_is_no_longer_a_stub():
     assert "write_csv" in body, "export still does not write anything"
 
 
-@pytest.mark.skipif(not _has_qt(), reason="PySide6 is an optional extra and CI does not install it")
+@pytest.mark.skipif(not _has_qt(), reason="Qt is not usable here (no PySide6, or no system Qt libraries)")
 def test_export_state_exists_before_any_scan():
     """
     Ctrl+E can fire before a scan has ever run. Reading an unset attribute

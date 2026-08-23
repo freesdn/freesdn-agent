@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "freesdn-agent"
-version = "1.0.2"
+version = "1.0.3"
 description = "Network discovery agent and desktop tool for FreeSDN platform"
 readme = "README.md"
 license = {text = "MIT"}

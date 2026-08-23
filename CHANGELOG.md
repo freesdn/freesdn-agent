@@ -5,6 +5,21 @@ All notable changes to the FreeSDN Agent are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-08-23
+
+CI only. **The binaries are identical to 1.0.2** -- nothing in the agent itself
+changed, and there is no reason to upgrade if you are already on 1.0.2.
+
+### Fixed
+
+- Two tests failed on the public repo's first CI run. They guard the Qt-only
+  parts of the CSV export and skipped on `import PySide6` failing -- but on a
+  headless runner PySide6 imports perfectly well and then loading a widget dies
+  on `libEGL.so.1: cannot open shared object file`. The Python package is
+  installed; the system libraries behind it are not. The guard now imports
+  QtWidgets, which is the cheapest thing that forces those libraries to load,
+  so the tests skip where Qt is unusable instead of failing.
+
 ## [1.0.2] - 2026-08-23
 
 Windows. Found by looking at a screenshot of the running GUI rather than at the
