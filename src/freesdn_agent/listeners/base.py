@@ -89,16 +89,13 @@ class BaseListener(ABC):
         if not self.REQUIRES_ROOT:
             return True
 
-        import sys
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                return ctypes.windll.shell32.IsUserAnAdmin() != 0
-            except Exception:
-                return False
-        else:
-            import os
-            return os.geteuid() == 0
+        # One implementation, in utils.privileges. A euid check here reported
+        # the packaged deployment (non-root + CAP_NET_RAW) as unprivileged, so
+        # safe_run() skipped every REQUIRES_ROOT listener on it -- including
+        # passive LLDP, which is the daemon's topology source.
+        from freesdn_agent.utils.privileges import has_raw_socket_capability
+
+        return has_raw_socket_capability()
 
     async def safe_run(self) -> None:
         """

@@ -1,7 +1,7 @@
 """Utility modules for FreeSDN Agent."""
 
 from freesdn_agent.utils.logging import setup_logging
-from freesdn_agent.utils.platform import get_platform, is_windows, is_linux, is_macos
+from freesdn_agent.utils.platform import get_platform, is_linux, is_macos, is_windows
 from freesdn_agent.utils.privileges import check_admin_privileges
 
 __all__ = [

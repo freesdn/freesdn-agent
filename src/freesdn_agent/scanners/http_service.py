@@ -5,14 +5,13 @@ Detects web services and extracts device information from HTTP responses.
 """
 
 import logging
+import re
 import socket
 import ssl
-import re
-from typing import Optional, Generator, Callable, List, Dict, Tuple
+from collections.abc import Callable, Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse
 
 try:
     import httpx
@@ -20,7 +19,7 @@ try:
 except ImportError:
     HTTPX_AVAILABLE = False
 
-from freesdn_agent.scanners.base import BaseScanner, ScanResult, ScanProgress, DeviceType
+from freesdn_agent.scanners.base import BaseScanner, DeviceType, ScanProgress, ScanResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +37,11 @@ DEVICE_SIGNATURES = [
     {"pattern": r"uniview|unv", "vendor": "Uniview", "type": DeviceType.CAMERA},
     {"pattern": r"hanwha|wisenet", "vendor": "Hanwha", "type": DeviceType.CAMERA},
     {"pattern": r"geovision", "vendor": "GeoVision", "type": DeviceType.CAMERA},
-    
+
     # NVR/DVR
     {"pattern": r"nvr|network\s*video\s*recorder", "vendor": None, "type": DeviceType.NVR},
     {"pattern": r"dvr|digital\s*video\s*recorder", "vendor": None, "type": DeviceType.DVR},
-    
+
     # Network devices
     {"pattern": r"ubiquiti|unifi", "vendor": "Ubiquiti", "type": DeviceType.ACCESS_POINT},
     {"pattern": r"mikrotik|routeros", "vendor": "MikroTik", "type": DeviceType.ROUTER},
@@ -61,7 +60,7 @@ DEVICE_SIGNATURES = [
     {"pattern": r"zyxel", "vendor": "ZyXEL", "type": DeviceType.SWITCH},
     {"pattern": r"synology", "vendor": "Synology", "type": DeviceType.SERVER},
     {"pattern": r"qnap", "vendor": "QNAP", "type": DeviceType.SERVER},
-    
+
     # VoIP
     {"pattern": r"polycom", "vendor": "Polycom", "type": DeviceType.VOIP_PHONE},
     {"pattern": r"yealink", "vendor": "Yealink", "type": DeviceType.VOIP_PHONE},
@@ -73,7 +72,7 @@ DEVICE_SIGNATURES = [
     {"pattern": r"avaya.*phone|one-x", "vendor": "Avaya", "type": DeviceType.VOIP_PHONE},
     {"pattern": r"mitel", "vendor": "Mitel", "type": DeviceType.VOIP_PHONE},
     {"pattern": r"aastra", "vendor": "Aastra", "type": DeviceType.VOIP_PHONE},
-    
+
     # Printers
     {"pattern": r"hp.*printer|laserjet|officejet", "vendor": "HP", "type": DeviceType.PRINTER},
     {"pattern": r"brother", "vendor": "Brother", "type": DeviceType.PRINTER},
@@ -82,7 +81,7 @@ DEVICE_SIGNATURES = [
     {"pattern": r"xerox", "vendor": "Xerox", "type": DeviceType.PRINTER},
     {"pattern": r"lexmark", "vendor": "Lexmark", "type": DeviceType.PRINTER},
     {"pattern": r"ricoh", "vendor": "Ricoh", "type": DeviceType.PRINTER},
-    
+
     # IoT
     {"pattern": r"shelly", "vendor": "Shelly", "type": DeviceType.IOT_DEVICE},
     {"pattern": r"tasmota", "vendor": "Tasmota", "type": DeviceType.IOT_DEVICE},
@@ -97,15 +96,15 @@ class HTTPScanResult:
     ip_address: str
     port: int
     is_https: bool = False
-    status_code: Optional[int] = None
-    server_header: Optional[str] = None
-    title: Optional[str] = None
-    headers: Dict[str, str] = field(default_factory=dict)
-    content_preview: Optional[str] = None
-    redirect_url: Optional[str] = None
-    ssl_info: Optional[Dict] = None
-    response_time_ms: Optional[float] = None
-    
+    status_code: int | None = None
+    server_header: str | None = None
+    title: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+    content_preview: str | None = None
+    redirect_url: str | None = None
+    ssl_info: dict | None = None
+    response_time_ms: float | None = None
+
     @property
     def url(self) -> str:
         """Get the service URL."""
@@ -118,32 +117,32 @@ class HTTPScanResult:
 class HTTPServiceScanner(BaseScanner):
     """
     HTTP Service Scanner.
-    
+
     Probes HTTP/HTTPS services to identify devices and extract
     information from web interfaces.
     """
-    
+
     SCANNER_NAME = "http_service"
     DISPLAY_NAME = "HTTP Service Scanner"
     REQUIRES_ROOT = False
-    
+
     # Common web management ports
     DEFAULT_HTTP_PORTS = [80, 8080, 8000, 8081, 8888]
     DEFAULT_HTTPS_PORTS = [443, 8443]
-    
+
     def __init__(
         self,
         timeout: float = 5.0,
         concurrency: int = 20,
-        http_ports: Optional[List[int]] = None,
-        https_ports: Optional[List[int]] = None,
+        http_ports: list[int] | None = None,
+        https_ports: list[int] | None = None,
         follow_redirects: bool = True,
         verify_ssl: bool = False,
         grab_content: bool = True,
     ):
         """
         Initialize HTTP service scanner.
-        
+
         Args:
             timeout: Request timeout in seconds
             concurrency: Max concurrent requests
@@ -159,26 +158,26 @@ class HTTPServiceScanner(BaseScanner):
         self.follow_redirects = follow_redirects
         self.verify_ssl = verify_ssl
         self.grab_content = grab_content
-    
+
     def scan(
         self,
-        targets: List[str],
-        interface: Optional[str] = None,
-        progress_callback: Optional[Callable[[ScanProgress], None]] = None,
+        targets: list[str],
+        interface: str | None = None,
+        progress_callback: Callable[[ScanProgress], None] | None = None,
     ) -> Generator[ScanResult, None, None]:
         """
         Scan targets for HTTP/HTTPS services.
-        
+
         Args:
             targets: List of IP addresses to scan
             interface: Not used
             progress_callback: Progress callback
-            
+
         Yields:
             ScanResult for each host with HTTP services
         """
         self.reset()
-        
+
         # Build list of all endpoint combinations
         endpoints = []
         for ip in targets:
@@ -186,39 +185,39 @@ class HTTPServiceScanner(BaseScanner):
                 endpoints.append((ip, port, False))
             for port in self.https_ports:
                 endpoints.append((ip, port, True))
-        
+
         total_endpoints = len(endpoints)
         completed = 0
         devices_found = 0
-        
+
         # Group results by IP
-        results_by_ip: Dict[str, List[HTTPScanResult]] = {}
-        
+        results_by_ip: dict[str, list[HTTPScanResult]] = {}
+
         logger.info(f"Starting HTTP scan of {len(targets)} hosts, {total_endpoints} endpoints")
-        
+
         start_time = datetime.now()
-        
+
         if progress_callback:
             progress_callback(ScanProgress(
                 scanner_name=self.SCANNER_NAME,
                 status="starting",
                 progress=0,
             ))
-        
+
         # Use thread pool for concurrent scanning
         with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
             futures = {
                 executor.submit(self._probe_endpoint, ip, port, is_https): (ip, port, is_https)
                 for ip, port, is_https in endpoints
             }
-            
+
             for future in as_completed(futures):
                 if self._cancelled:
                     break
-                
+
                 completed += 1
                 ip, port, is_https = futures[future]
-                
+
                 try:
                     result = future.result()
                     if result and result.status_code:
@@ -227,7 +226,7 @@ class HTTPServiceScanner(BaseScanner):
                         results_by_ip[ip].append(result)
                 except Exception as e:
                     logger.debug(f"Error scanning {ip}:{port}: {e}")
-                
+
                 if progress_callback and completed % 10 == 0:
                     elapsed = (datetime.now() - start_time).total_seconds()
                     progress_callback(ScanProgress(
@@ -238,15 +237,15 @@ class HTTPServiceScanner(BaseScanner):
                         devices_found=len(results_by_ip),
                         elapsed_seconds=elapsed,
                     ))
-        
+
         # Convert results to ScanResults
         for ip, http_results in results_by_ip.items():
             if self._cancelled:
                 break
-            
+
             device_info = self._analyze_http_results(http_results)
             devices_found += 1
-            
+
             yield ScanResult(
                 ip_address=ip,
                 device_type=device_info.get("type", DeviceType.UNKNOWN),
@@ -273,7 +272,7 @@ class HTTPServiceScanner(BaseScanner):
                     "server_header": device_info.get("server_header"),
                 },
             )
-        
+
         if progress_callback:
             elapsed = (datetime.now() - start_time).total_seconds()
             progress_callback(ScanProgress(
@@ -283,34 +282,34 @@ class HTTPServiceScanner(BaseScanner):
                 devices_found=devices_found,
                 elapsed_seconds=elapsed,
             ))
-        
+
         logger.info(f"HTTP scan completed: {devices_found} hosts with web services")
-    
-    def _probe_endpoint(self, ip: str, port: int, is_https: bool) -> Optional[HTTPScanResult]:
+
+    def _probe_endpoint(self, ip: str, port: int, is_https: bool) -> HTTPScanResult | None:
         """
         Probe a single HTTP endpoint.
-        
+
         Args:
             ip: Target IP
             port: Target port
             is_https: Whether to use HTTPS
-            
+
         Returns:
             HTTPScanResult or None if not accessible
         """
         protocol = "https" if is_https else "http"
         url = f"{protocol}://{ip}:{port}/"
-        
+
         start_time = datetime.now()
-        
+
         if HTTPX_AVAILABLE:
             return self._probe_with_httpx(ip, port, is_https, url, start_time)
         else:
             return self._probe_with_socket(ip, port, is_https, url, start_time)
-    
+
     def _probe_with_httpx(
         self, ip: str, port: int, is_https: bool, url: str, start_time: datetime
-    ) -> Optional[HTTPScanResult]:
+    ) -> HTTPScanResult | None:
         """Probe using httpx library."""
         try:
             with httpx.Client(
@@ -321,9 +320,9 @@ class HTTPServiceScanner(BaseScanner):
                 response = client.get(url, headers={
                     "User-Agent": "FreeSDN-Agent/1.0 (Network Discovery)",
                 })
-                
+
                 response_time = (datetime.now() - start_time).total_seconds() * 1000
-                
+
                 result = HTTPScanResult(
                     ip_address=ip,
                     port=port,
@@ -333,18 +332,18 @@ class HTTPServiceScanner(BaseScanner):
                     server_header=response.headers.get("server"),
                     response_time_ms=response_time,
                 )
-                
+
                 # Extract title from content
                 if self.grab_content and response.text:
                     title_match = re.search(r'<title[^>]*>([^<]+)</title>', response.text, re.I)
                     if title_match:
                         result.title = title_match.group(1).strip()[:200]
-                    
+
                     # Store preview
                     result.content_preview = response.text[:2000]
-                
+
                 return result
-                
+
         except httpx.ConnectError:
             return None
         except httpx.TimeoutException:
@@ -352,28 +351,28 @@ class HTTPServiceScanner(BaseScanner):
         except Exception as e:
             logger.debug(f"HTTP probe error for {url}: {e}")
             return None
-    
+
     def _probe_with_socket(
         self, ip: str, port: int, is_https: bool, url: str, start_time: datetime
-    ) -> Optional[HTTPScanResult]:
+    ) -> HTTPScanResult | None:
         """Probe using raw sockets (fallback)."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self.timeout)
-            
+
             if is_https:
                 context = ssl.create_default_context()
                 if not self.verify_ssl:
                     context.check_hostname = False
                     context.verify_mode = ssl.CERT_NONE
                 sock = context.wrap_socket(sock, server_hostname=ip)
-            
+
             sock.connect((ip, port))
-            
+
             # Send HTTP request
             request = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: FreeSDN-Agent/1.0\r\nConnection: close\r\n\r\n"
             sock.send(request.encode())
-            
+
             # Receive response
             response = b""
             while True:
@@ -383,20 +382,20 @@ class HTTPServiceScanner(BaseScanner):
                 response += chunk
                 if len(response) > 10000:  # Limit response size
                     break
-            
+
             sock.close()
             response_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             # Parse response
             response_text = response.decode('utf-8', errors='ignore')
-            
+
             # Extract status code
             status_match = re.search(r'HTTP/\d\.\d (\d+)', response_text)
             status_code = int(status_match.group(1)) if status_match else None
-            
+
             if not status_code:
                 return None
-            
+
             result = HTTPScanResult(
                 ip_address=ip,
                 port=port,
@@ -404,7 +403,7 @@ class HTTPServiceScanner(BaseScanner):
                 status_code=status_code,
                 response_time_ms=response_time,
             )
-            
+
             # Extract headers
             header_end = response_text.find('\r\n\r\n')
             if header_end > 0:
@@ -413,31 +412,31 @@ class HTTPServiceScanner(BaseScanner):
                     if ':' in line:
                         key, value = line.split(':', 1)
                         result.headers[key.strip().lower()] = value.strip()
-                
+
                 result.server_header = result.headers.get('server')
-            
+
             # Extract title
             if self.grab_content:
                 title_match = re.search(r'<title[^>]*>([^<]+)</title>', response_text, re.I)
                 if title_match:
                     result.title = title_match.group(1).strip()[:200]
                 result.content_preview = response_text[header_end+4:header_end+2004] if header_end > 0 else None
-            
+
             return result
-            
-        except socket.timeout:
+
+        except TimeoutError:
             return None
         except Exception as e:
             logger.debug(f"Socket probe error for {url}: {e}")
             return None
-    
-    def _analyze_http_results(self, results: List[HTTPScanResult]) -> Dict:
+
+    def _analyze_http_results(self, results: list[HTTPScanResult]) -> dict:
         """
         Analyze HTTP results to identify device.
-        
+
         Args:
             results: List of HTTP scan results for one host
-            
+
         Returns:
             Dict with device info
         """
@@ -451,39 +450,39 @@ class HTTPServiceScanner(BaseScanner):
             "http_port": None,
             "https_port": None,
         }
-        
+
         # Combine all text for signature matching
         all_text = ""
-        
+
         for result in results:
             # Record ports
             if result.is_https and info["https_port"] is None:
                 info["https_port"] = result.port
             elif not result.is_https and info["http_port"] is None:
                 info["http_port"] = result.port
-            
+
             # Collect text for analysis
             if result.title:
                 all_text += f" {result.title}"
                 if info["title"] is None:
                     info["title"] = result.title
-            
+
             if result.server_header:
                 all_text += f" {result.server_header}"
                 if info["server_header"] is None:
                     info["server_header"] = result.server_header
-            
+
             if result.content_preview:
                 all_text += f" {result.content_preview}"
-        
+
         # Match signatures
         all_text_lower = all_text.lower()
-        
+
         for sig in DEVICE_SIGNATURES:
             if re.search(sig["pattern"], all_text_lower, re.I):
                 info["type"] = sig["type"]
                 if sig["vendor"]:
                     info["vendor"] = sig["vendor"]
                 break
-        
+
         return info

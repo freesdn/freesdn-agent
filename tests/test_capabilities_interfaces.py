@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestListInterfacesFiltering:
     def test_skips_loopback(self) -> None:
@@ -30,8 +28,10 @@ class TestListInterfacesFiltering:
             "eth0": {2: [{"addr": "192.168.1.10", "netmask": "255.255.255.0"}]},
             "lo": {2: [{"addr": "127.0.0.1"}]},
         }[iface]
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform:
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+        ):
             mock_platform.system.return_value = "Linux"
             result = cap._list_interfaces()
         assert "lo" not in result
@@ -47,8 +47,10 @@ class TestListInterfacesFiltering:
             "eth0": {2: [{"addr": "192.168.1.10"}]},
             "eth1": {},  # no IPv4 → skip
         }[iface]
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform:
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+        ):
             mock_platform.system.return_value = "Linux"
             result = cap._list_interfaces()
         assert result == ["eth0"]
@@ -63,8 +65,10 @@ class TestListInterfacesFiltering:
             "eth0": {2: [{"addr": "192.168.1.10"}]},
             "eth1": {2: [{"addr": "169.254.1.5"}]},  # APIPA → skip
         }[iface]
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform:
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+        ):
             mock_platform.system.return_value = "Linux"
             result = cap._list_interfaces()
         assert result == ["eth0"]
@@ -80,8 +84,10 @@ class TestListInterfacesFiltering:
         fake_netifaces.ifaddresses.return_value = {
             2: [{"addr": "127.0.0.5"}],
         }
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform:
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+        ):
             mock_platform.system.return_value = "Linux"
             result = cap._list_interfaces()
         assert result == []
@@ -98,11 +104,15 @@ class TestWindowsFriendlyNameResolution:
         fake_netifaces.ifaddresses.return_value = {
             2: [{"addr": "192.168.1.100"}],
         }
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform, \
-             patch.object(
-                 cap, "_resolve_windows_friendly_name", return_value="Ethernet",
-             ):
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+            patch.object(
+                cap,
+                "_resolve_windows_friendly_name",
+                return_value="Ethernet",
+            ),
+        ):
             mock_platform.system.return_value = "Windows"
             result = cap._list_interfaces()
         assert result == ["Ethernet"]
@@ -119,11 +129,15 @@ class TestWindowsFriendlyNameResolution:
         fake_netifaces.ifaddresses.return_value = {
             2: [{"addr": "192.168.1.100"}],
         }
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform, \
-             patch.object(
-                 cap, "_resolve_windows_friendly_name", return_value=None,
-             ):
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+            patch.object(
+                cap,
+                "_resolve_windows_friendly_name",
+                return_value=None,
+            ),
+        ):
             mock_platform.system.return_value = "Windows"
             result = cap._list_interfaces()
         assert result == [guid]
@@ -142,8 +156,10 @@ class TestWindowsFriendlyNameResolution:
         fake_netifaces.ifaddresses.return_value = {
             2: [{"addr": "127.0.0.1"}],
         }
-        with patch.dict("sys.modules", {"netifaces": fake_netifaces}), \
-             patch.object(cap, "platform") as mock_platform:
+        with (
+            patch.dict("sys.modules", {"netifaces": fake_netifaces}),
+            patch.object(cap, "platform") as mock_platform,
+        ):
             mock_platform.system.return_value = "Windows"
             result = cap._list_interfaces()
         assert result == []

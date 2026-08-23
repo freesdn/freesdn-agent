@@ -12,7 +12,6 @@ skipped per IP) so the operator doesn't lose context to another dialog.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -56,7 +55,7 @@ class AdoptDialog(QDialog):
         site_id: str,
         site_name: str,
         client,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._devices = devices

@@ -6,7 +6,7 @@ Defines the common interface for all network scanners.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Generator, Callable, List
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -34,34 +34,34 @@ class DeviceType(str, Enum):
 @dataclass
 class ScanResult:
     """Result from a network scan."""
-    
+
     ip_address: str
-    mac_address: Optional[str] = None
-    hostname: Optional[str] = None
-    vendor: Optional[str] = None
+    mac_address: str | None = None
+    hostname: str | None = None
+    vendor: str | None = None
     device_type: DeviceType = DeviceType.UNKNOWN
-    
+
     # Discovery metadata
     discovered_at: datetime = field(default_factory=datetime.utcnow)
     discovered_by: str = ""  # Scanner name
-    response_time_ms: Optional[float] = None
-    
+    response_time_ms: float | None = None
+
     # Protocol-specific data
-    onvif_url: Optional[str] = None
-    http_port: Optional[int] = None
-    https_port: Optional[int] = None
-    serial_number: Optional[str] = None
-    firmware_version: Optional[str] = None
-    model: Optional[str] = None
-    manufacturer: Optional[str] = None
-    
+    onvif_url: str | None = None
+    http_port: int | None = None
+    https_port: int | None = None
+    serial_number: str | None = None
+    firmware_version: str | None = None
+    model: str | None = None
+    manufacturer: str | None = None
+
     # Extra data (protocol-specific)
     extra: dict = field(default_factory=dict)
-    
+
     # Status
     is_new: bool = True
     confidence: float = 0.0  # Classification confidence 0-1
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -89,11 +89,11 @@ class ScanResult:
 @dataclass
 class ScanProgress:
     """Progress information for a scan."""
-    
+
     scanner_name: str
     status: str  # "starting", "running", "completed", "failed", "cancelled"
     progress: float  # 0-100
-    current_target: Optional[str] = None
+    current_target: str | None = None
     devices_found: int = 0
     errors: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
@@ -102,14 +102,14 @@ class ScanProgress:
 class BaseScanner(ABC):
     """
     Base class for all network scanners.
-    
+
     Subclasses must implement the scan() method.
     """
-    
+
     SCANNER_NAME: str = "base"
     DISPLAY_NAME: str = "Base Scanner"
     REQUIRES_ROOT: bool = False
-    
+
     def __init__(
         self,
         timeout: float = 3.0,
@@ -117,7 +117,7 @@ class BaseScanner(ABC):
     ):
         """
         Initialize scanner.
-        
+
         Args:
             timeout: Timeout for each scan operation in seconds
             concurrency: Maximum concurrent operations
@@ -125,36 +125,36 @@ class BaseScanner(ABC):
         self.timeout = timeout
         self.concurrency = concurrency
         self._cancelled = False
-    
+
     @abstractmethod
     def scan(
         self,
-        targets: List[str],
-        interface: Optional[str] = None,
-        progress_callback: Optional[Callable[["ScanProgress"], None]] = None,
+        targets: list[str],
+        interface: str | None = None,
+        progress_callback: Callable[["ScanProgress"], None] | None = None,
     ) -> Generator[ScanResult, None, None]:
         """
         Perform network scan.
-        
+
         Args:
             targets: Targets to scan (IP ranges, subnets, etc.)
             interface: Network interface to use
             progress_callback: Called with progress updates
-            
+
         Yields:
             ScanResult for each discovered device
         """
         pass
-    
+
     def cancel(self) -> None:
         """Cancel the current scan."""
         self._cancelled = True
         logger.info(f"{self.SCANNER_NAME} scanner cancelled")
-    
+
     def reset(self) -> None:
         """Reset scanner state."""
         self._cancelled = False
-    
+
     @property
     def is_cancelled(self) -> bool:
         """Check if scan was cancelled."""

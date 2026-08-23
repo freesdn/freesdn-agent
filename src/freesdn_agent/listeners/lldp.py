@@ -10,7 +10,7 @@ Requires root/admin for raw socket access.
 import asyncio
 import logging
 import struct
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from freesdn_agent.listeners.base import BaseListener
@@ -158,7 +158,7 @@ class LLDPListener(BaseListener):
     async def run(self) -> None:
         """Sniff LLDP frames in a background thread."""
         try:
-            from scapy.all import sniff, Ether
+            from scapy.all import Ether, sniff
         except ImportError:
             logger.warning("scapy not available — LLDP listener disabled")
             return
@@ -181,7 +181,7 @@ class LLDPListener(BaseListener):
                             "discovered_via": "LLDP",
                             "neighbor": neighbor,
                             "local_interface": iface,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         }
                         fut = asyncio.run_coroutine_threadsafe(
                             self._report("topology_update", payload),

@@ -20,7 +20,7 @@ import json
 import logging
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,19 @@ _ROLLBACK_WINDOW_SECONDS = 60
 
 # Maximum rollback attempts before refusing to start
 _MAX_ROLLBACK_ATTEMPTS = 3
+
+
+def is_frozen() -> bool:
+    """
+    True only when running as a PyInstaller-frozen single binary.
+
+    The self-update path replaces the file at ``sys.executable``. That is
+    correct for a frozen build (``sys.executable`` IS the agent binary) but
+    catastrophic for a source install (``pip install freesdn-agent[daemon]``),
+    where ``sys.executable`` is the user's Python interpreter — self-update
+    would overwrite the interpreter with an agent binary.
+    """
+    return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
 
 
 def _binary_path() -> Path:
@@ -66,7 +79,7 @@ def write_rollback_marker(prev_version: str, prev_hash: str) -> None:
     data = {
         "previous_version": prev_version,
         "previous_binary_hash": prev_hash,
-        "staged_at": datetime.now(timezone.utc).isoformat(),
+        "staged_at": datetime.now(UTC).isoformat(),
         "binary_path": str(_binary_path()),
         "rollback_count": 0,
     }
@@ -132,13 +145,13 @@ def check_rollback_needed() -> bool:
         staged_time = datetime.fromisoformat(staged_at)
         # Ensure timezone-aware comparison
         if staged_time.tzinfo is None:
-            staged_time = staged_time.replace(tzinfo=timezone.utc)
+            staged_time = staged_time.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         logger.warning("Invalid timestamp in rollback marker — removing")
         _safe_delete(marker)
         return False
 
-    elapsed = (datetime.now(timezone.utc) - staged_time).total_seconds()
+    elapsed = (datetime.now(UTC) - staged_time).total_seconds()
 
     if elapsed > _ROLLBACK_WINDOW_SECONDS:
         # Previous startup survived long enough — update is healthy

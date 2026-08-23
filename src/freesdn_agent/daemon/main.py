@@ -14,7 +14,7 @@ import asyncio
 import logging
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from freesdn_agent import __version__
 from freesdn_agent.core.config import Config, get_config
@@ -42,13 +42,13 @@ class AgentDaemon:
     async def start(self) -> None:
         """Start the daemon and all subsystems."""
         from freesdn_agent.api.ws_client import AgentWSClient
-        from freesdn_agent.services.heartbeat import HeartbeatService
-        from freesdn_agent.services.task_executor import TaskExecutor
-        from freesdn_agent.services.async_scan_manager import AsyncScanManager
-        from freesdn_agent.services.updater import UpdaterService
-        from freesdn_agent.services.scheduler import SchedulerService
-        from freesdn_agent.services.rollback import check_rollback_needed, clear_rollback_marker
         from freesdn_agent.listeners import ListenerManager
+        from freesdn_agent.services.async_scan_manager import AsyncScanManager
+        from freesdn_agent.services.heartbeat import HeartbeatService
+        from freesdn_agent.services.rollback import check_rollback_needed, clear_rollback_marker
+        from freesdn_agent.services.scheduler import SchedulerService
+        from freesdn_agent.services.task_executor import TaskExecutor
+        from freesdn_agent.services.updater import UpdaterService
 
         daemon_cfg = self.config.daemon
         if not daemon_cfg.agent_id or not daemon_cfg.server_url:
@@ -60,7 +60,7 @@ class AgentDaemon:
             logger.warning("Rollback was performed — starting with restored binary")
 
         self._running = True
-        self._started_at = datetime.now(timezone.utc)
+        self._started_at = datetime.now(UTC)
 
         logger.info(
             "FreeSDN Agent Daemon v%s starting (agent_id=%s, server=%s)",
@@ -156,7 +156,7 @@ class AgentDaemon:
     def uptime_seconds(self) -> float:
         if self._started_at is None:
             return 0.0
-        return (datetime.now(timezone.utc) - self._started_at).total_seconds()
+        return (datetime.now(UTC) - self._started_at).total_seconds()
 
 
 def _setup_logging(config: Config) -> None:

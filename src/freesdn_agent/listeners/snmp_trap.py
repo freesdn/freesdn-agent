@@ -10,7 +10,7 @@ Requires root on Linux (port < 1024).
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from freesdn_agent.listeners.base import BaseListener
@@ -29,8 +29,8 @@ def _try_parse_snmp_trap(data: bytes, source_ip: str) -> dict[str, Any] | None:
     Uses pysnmp's BER decoder if available, falls back to basic extraction.
     """
     try:
-        from pysnmp.proto import api as snmp_api
         from pyasn1.codec.ber import decoder as ber_decoder
+        from pysnmp.proto import api as snmp_api
 
         # Decode with the proper SNMP Message schema for this version. A
         # generic pyasn1 decode cannot read the context-tagged trap PDU
@@ -49,7 +49,7 @@ def _try_parse_snmp_trap(data: bytes, source_ip: str) -> dict[str, Any] | None:
             "source_ip": source_ip,
             "snmp_version": "v1" if version == snmp_api.SNMP_VERSION_1 else "v2",
             "community_length": community_len,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         if version == snmp_api.SNMP_VERSION_1:  # SNMPv1 trap PDU
@@ -77,7 +77,7 @@ def _try_parse_snmp_trap(data: bytes, source_ip: str) -> dict[str, Any] | None:
             "event_type": "snmp_trap",
             "source_ip": source_ip,
             "raw_length": len(data),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     except (RecursionError, MemoryError):
         logger.warning("SNMP trap from %s: resource limit during BER decoding", source_ip)
@@ -132,7 +132,7 @@ class SNMPTrapListener(BaseListener):
                     data, source_ip = await asyncio.wait_for(
                         protocol.queue.get(), timeout=1.0
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 parsed = _try_parse_snmp_trap(data, source_ip)

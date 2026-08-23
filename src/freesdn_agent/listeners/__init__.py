@@ -8,7 +8,6 @@ discoveries to the control plane via WebSocket.
 
 import asyncio
 import logging
-from typing import Any
 
 from freesdn_agent.listeners.base import BaseListener
 

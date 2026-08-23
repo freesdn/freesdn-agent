@@ -5,11 +5,12 @@ Periodically collects system metrics via psutil and sends
 them to the control plane over the WebSocket connection.
 """
 
-import asyncio
 import logging
 import platform
 import socket
 import sys
+
+from freesdn_agent.utils.aio import StoppableSleeper
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,14 @@ class HeartbeatService:
         self._daemon = daemon
         self._running = False
         self._first_sent = False
+        self._sleeper = StoppableSleeper()
         self.on_first_heartbeat = None  # Callable[[], None] | None
 
     def stop(self) -> None:
         self._running = False
+        # Wake the interval sleep so shutdown is immediate rather than waiting
+        # out the remainder of it while asyncio.gather holds the daemon open.
+        self._sleeper.wake()
 
     async def run(self) -> None:
         """Main loop — runs until stop() or CancelledError."""
@@ -87,7 +92,8 @@ class HeartbeatService:
             except Exception:
                 logger.exception("Heartbeat send failed")
 
-            await asyncio.sleep(self._interval)
+            if await self._sleeper.sleep(self._interval):
+                break
 
     def _collect_metrics(self) -> dict:
         """Gather system health metrics."""

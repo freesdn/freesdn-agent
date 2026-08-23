@@ -23,7 +23,7 @@ scapy==2.7.0
 wsdiscovery==2.1.2
 zeroconf==0.150.0
 async-upnp-client==0.47.0
-pysnmp==7.1.27
+pysnmp==7.1.28
 
 # HTTP/WebSocket Client
 httpx==0.28.1
@@ -51,5 +51,6 @@ anyio==4.14.1
 # pinned explicitly to force the patched versions. After changing, regenerate the
 # hash-locked requirements-release.txt (uv/pip-compile --generate-hashes) and run
 # the agent test suite — these are the SHIPPED versions.
-cryptography==49.0.0
-aiohttp==3.14.1
+cryptography==50.0.0
+pyasn1==0.6.4
+aiohttp==3.14.3

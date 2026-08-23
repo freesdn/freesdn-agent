@@ -10,16 +10,13 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Crash handler
 # ---------------------------------------------------------------------------
+
 
 class TestCrashHandler:
     def test_writes_report_with_traceback(self, tmp_path: Path) -> None:
@@ -31,7 +28,9 @@ class TestCrashHandler:
             except RuntimeError:
                 exc_type, exc_value, exc_tb = sys.exc_info()
                 path = crash_handler._write_crash_report(
-                    exc_type, exc_value, exc_tb,
+                    exc_type,
+                    exc_value,
+                    exc_tb,
                 )
 
         body = path.read_text(encoding="utf-8")
@@ -62,6 +61,7 @@ class TestCrashHandler:
 # Single-instance lock
 # ---------------------------------------------------------------------------
 
+
 class TestSingleInstanceLock:
     def test_acquire_creates_lockfile_with_pid(self, tmp_path: Path) -> None:
         from freesdn_agent.desktop import SingleInstanceLock
@@ -91,8 +91,7 @@ class TestSingleInstanceLock:
     def test_reclaim_stale_lock(self, tmp_path: Path) -> None:
         """When the previous instance died without releasing the lock,
         a fresh launch should detect the dead PID and reclaim."""
-        from freesdn_agent.desktop import SingleInstanceLock
-        from freesdn_agent.desktop import single_instance
+        from freesdn_agent.desktop import SingleInstanceLock, single_instance
 
         lock_path = tmp_path / "app.lock"
         # Plant a lock claiming a PID that doesn't exist.
@@ -118,13 +117,14 @@ class TestSingleInstanceLock:
     def test_acquire_returns_false_when_unable_to_remove_stale(self, tmp_path: Path) -> None:
         """If unlink() fails (eg. permissions), bail out cleanly rather
         than looping forever."""
-        from freesdn_agent.desktop import SingleInstanceLock
-        from freesdn_agent.desktop import single_instance
+        from freesdn_agent.desktop import SingleInstanceLock, single_instance
 
         lock_path = tmp_path / "app.lock"
         lock_path.write_text("999999", encoding="utf-8")
 
-        with patch.object(single_instance, "_pid_alive", return_value=False), \
-             patch.object(Path, "unlink", side_effect=PermissionError("denied")):
+        with (
+            patch.object(single_instance, "_pid_alive", return_value=False),
+            patch.object(Path, "unlink", side_effect=PermissionError("denied")),
+        ):
             lock = SingleInstanceLock(path=lock_path)
             assert lock.acquire() is False

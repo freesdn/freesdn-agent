@@ -28,7 +28,7 @@ import logging
 import platform
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from platformdirs import user_data_dir
@@ -47,7 +47,7 @@ def _crash_dir() -> Path:
 
 def _write_crash_report(exc_type, exc_value, exc_tb) -> Path:
     """Serialize the exception + environment to a timestamped file."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     name = now.strftime("crash-%Y%m%d-%H%M%S.txt")
     path = _crash_dir() / name
 
@@ -57,8 +57,8 @@ def _write_crash_report(exc_type, exc_value, exc_tb) -> Path:
         qt_version = "unknown"
 
     body_lines = [
-        f"FreeSDN Agent crash report",
-        f"==========================",
+        "FreeSDN Agent crash report",
+        "==========================",
         f"Timestamp: {now.isoformat()}",
         f"Agent version: {__version__}",
         f"Python: {sys.version}",
@@ -82,7 +82,9 @@ def _show_dialog(exc_type, exc_value, report_path: Path) -> None:
     """Best-effort: surface a Qt dialog if the app loop is alive."""
     try:
         from PySide6.QtWidgets import (
-            QApplication, QMessageBox, QPushButton,
+            QApplication,
+            QMessageBox,
+            QPushButton,
         )
     except Exception:
         return

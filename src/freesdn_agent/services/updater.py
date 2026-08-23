@@ -24,15 +24,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 from freesdn_agent.services.rollback import (
     _binary_path,
     _sha256_file,
+    is_frozen,
     write_rollback_marker,
 )
+from freesdn_agent.utils.aio import StoppableSleeper
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +62,26 @@ class UpdaterService:
         self._agent_version = agent_version
         self._running = False
         self._update_lock = asyncio.Lock()
+        self._sleeper = StoppableSleeper()
 
     async def run(self) -> None:
         """Main loop — check for updates at configured interval."""
         if not self._config.auto_update_enabled:
             logger.info("Auto-update disabled in config")
+            return
+
+        # Self-update replaces the file at sys.executable. In a PyInstaller
+        # onefile build that IS the agent binary, but for a source install
+        # (pip install freesdn-agent[daemon]) sys.executable is the user's
+        # Python interpreter, and the updater would overwrite it with an agent
+        # binary. auto_update_enabled defaults to True, so this must fail
+        # closed rather than rely on operator configuration.
+        if not is_frozen():
+            logger.info(
+                "Auto-update is unsupported for source installs; upgrade with "
+                "your package manager (e.g. pip install -U freesdn-agent). "
+                "Updater will not run."
+            )
             return
 
         self._running = True
@@ -78,7 +95,8 @@ class UpdaterService:
 
         while self._running:
             try:
-                await asyncio.sleep(interval)
+                if await self._sleeper.sleep(interval):
+                    break
             except asyncio.CancelledError:
                 break
 
@@ -356,6 +374,16 @@ class UpdaterService:
           3. Atomic rename temp → target (os.replace)
           4. Write rollback marker after successful replace
         """
+        # Defense in depth: run() already refuses to start for source installs,
+        # but this is the call that actually os.replace()s over sys.executable,
+        # so it must never proceed unfrozen regardless of how it was reached.
+        if not is_frozen():
+            logger.error(
+                "Refusing to stage a binary update: not running as a frozen "
+                "executable, so sys.executable is the Python interpreter."
+            )
+            return False
+
         target = _binary_path()
         target_dir = target.parent
 
@@ -548,7 +576,7 @@ class UpdaterService:
                 "version": version,
                 "success": success,
                 "detail": detail,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
         except Exception:
             logger.debug("Failed to report update status", exc_info=True)
@@ -556,6 +584,9 @@ class UpdaterService:
     def stop(self) -> None:
         """Signal the updater to stop."""
         self._running = False
+        # Its interval defaults to 3000s and allows 86400s, so without this the
+        # daemon cannot exit until that sleep ends and systemd SIGKILLs it.
+        self._sleeper.wake()
 
 
 def _detect_platform() -> str:

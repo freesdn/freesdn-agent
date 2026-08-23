@@ -17,23 +17,24 @@ exercise the actual websockets handshake, not a mocked stub. Each test
 launches its own server on an ephemeral port so they can run in
 parallel without interference.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import socket
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import websockets
 
 from freesdn_agent.api.ws_client import AgentWSClient
 
-
 # ---------------------------------------------------------------------------
 # Test infrastructure
 # ---------------------------------------------------------------------------
+
 
 def _free_port() -> int:
     """Grab an ephemeral port number (no leak — close immediately)."""
@@ -65,9 +66,11 @@ class _FakeServer:
         self._server: websockets.WebSocketServer | None = None
         self.port = _free_port()
 
-    async def __aenter__(self) -> "_FakeServer":
+    async def __aenter__(self) -> _FakeServer:
         self._server = await websockets.serve(
-            self._handle, "127.0.0.1", self.port,
+            self._handle,
+            "127.0.0.1",
+            self.port,
         )
         return self
 
@@ -106,9 +109,11 @@ class _FakeServer:
 
     async def wait_for_messages(self, n: int, timeout: float = 2.0) -> None:
         """Block until at least n messages have been received from client."""
+
         async def _poll():
             while len(self.received) < n:
                 await asyncio.sleep(0.02)
+
         await asyncio.wait_for(_poll(), timeout=timeout)
 
 
@@ -127,14 +132,17 @@ def _mk_client(port: int) -> AgentWSClient:
 def fake_keyring():
     """Replace ``keyring.get_password`` so the client doesn't touch the
     real OS keyring during tests."""
-    with patch("freesdn_agent.api.ws_client.AgentWSClient._load_agent_key",
-               return_value="test-agent-key-xyz"):
+    with patch(
+        "freesdn_agent.api.ws_client.AgentWSClient._load_agent_key",
+        return_value="test-agent-key-xyz",
+    ):
         yield
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestAuthHandshake:
     @pytest.mark.asyncio
@@ -145,7 +153,8 @@ class TestAuthHandshake:
             try:
                 # Give the handshake time to land.
                 await asyncio.wait_for(
-                    _wait_for(lambda: server.auth_message is not None), timeout=2.0,
+                    _wait_for(lambda: server.auth_message is not None),
+                    timeout=2.0,
                 )
                 assert server.auth_message == {
                     "agent_key": "test-agent-key-xyz",
@@ -288,11 +297,14 @@ class TestUrlConstruction:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _wait_for(predicate, timeout: float = 2.0, interval: float = 0.02) -> None:
     """Poll predicate() until it returns truthy or timeout."""
+
     async def _poll():
         while not predicate():
             await asyncio.sleep(interval)
+
     await asyncio.wait_for(_poll(), timeout=timeout)
 
 

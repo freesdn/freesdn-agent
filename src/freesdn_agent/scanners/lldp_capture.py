@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from freesdn_agent.listeners.lldp import parse_lldp_tlvs
 
@@ -45,7 +45,7 @@ async def capture_lldp_edges(
     couldn't open a raw socket (no privileges).
     """
     try:
-        from scapy.all import sniff, Ether  # noqa: F401
+        from scapy.all import Ether, sniff  # noqa: F401
     except ImportError:
         logger.warning("scapy not available — LLDP capture skipped")
         return []
@@ -76,7 +76,7 @@ async def capture_lldp_edges(
                     "neighbor_mgmt_address": neighbor.get("management_address"),
                     "vlan_id": neighbor.get("vlan_id"),
                     "protocol": "lldp",
-                    "_seen_at": datetime.now(timezone.utc).isoformat(),
+                    "_seen_at": datetime.now(UTC).isoformat(),
                 }
                 # Merge with prior, preferring non-None values
                 prior = seen.get(key)

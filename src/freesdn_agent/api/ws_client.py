@@ -12,8 +12,9 @@ Matches the protocol defined in:
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 import websockets
 from websockets.exceptions import (
@@ -114,7 +115,7 @@ class AgentWSClient:
         msg = {
             "type": report_type,
             "payload": payload,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         if command_id:
             msg["command_id"] = command_id
@@ -138,7 +139,7 @@ class AgentWSClient:
                     ),
                     timeout=5.0,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 for task in list(self._inflight_handlers):
                     task.cancel()
 

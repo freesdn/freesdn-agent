@@ -17,7 +17,7 @@ scan_manager / WS connection signals from the main window.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
@@ -52,7 +52,7 @@ class AgentTrayIcon(QObject):
         """Some Linux desktops don't expose a tray. Fail open."""
         return QSystemTrayIcon.isSystemTrayAvailable()
 
-    def install(self, parent: Optional[QObject] = None) -> None:
+    def install(self, parent: QObject | None = None) -> None:
         """Build the tray icon + context menu and show it."""
         if self._tray is not None:
             return

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "freesdn-agent"
-version = "1.0.0"
+version = "1.0.1"
 description = "Network discovery agent and desktop tool for FreeSDN platform"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
-    {name = "FreeSDN Team"}
+    {name = "PyPV - Python Platform Ventures", email = "contact@freesdn.org"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -45,7 +45,7 @@ dependencies = [
     "wsdiscovery==2.1.2",
     "zeroconf==0.150.0",
     "async-upnp-client==0.47.0",
-    "pysnmp==7.1.27",
+    "pysnmp==7.1.28",
 
     # HTTP/WebSocket
     "httpx==0.28.1",
@@ -65,8 +65,9 @@ dependencies = [
     # transitively; pinned explicitly here to force the patched versions into the
     # lock. Regenerate requirements-release.txt (uv/pip-compile --generate-hashes)
     # and run the agent test suite after any change here.
-    "cryptography==49.0.0",  # GHSA: high
-    "aiohttp==3.14.1",       # GHSA: medium
+    "cryptography==50.0.0",  # GHSA: high
+    "pyasn1==0.6.4",         # GHSA: high (3x BER/DER decoder DoS) - pysnmp only floors >=0.6.3
+    "aiohttp==3.14.3",       # GHSA: high
 ]
 
 [project.optional-dependencies]
@@ -77,7 +78,7 @@ daemon = [
     "wsdiscovery==2.1.2",
     "zeroconf==0.150.0",
     "async-upnp-client==0.47.0",
-    "pysnmp==7.1.27",
+    "pysnmp==7.1.28",
     "httpx==0.28.1",
     "websockets==16.0",
     "pydantic==2.13.4",
@@ -88,8 +89,9 @@ daemon = [
     "anyio==4.14.1",
     # Security-pinned transitives (Dependabot GHSA fixes) — keep in sync with the
     # main dependencies list above and requirements.txt.
-    "cryptography==49.0.0",
-    "aiohttp==3.14.1",
+    "cryptography==50.0.0",
+    "pyasn1==0.6.4",
+    "aiohttp==3.14.3",
 ]
 # Optional L2 capture: ARP scan + LLDP/CDP/DHCP passive discovery.
 # scapy is GPL-2.0-only — installing this extra subjects that deployment to
@@ -143,6 +145,10 @@ include = '\.pyi?$'
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+# Top-level `select`/`ignore`/`isort` were deprecated by ruff in favour of the
+# `lint.*` counterparts; ruff warned on every invocation. Moved 2026-08-15.
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -155,9 +161,22 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # function call in default argument
+    # Matches the backend's ignore list (freesdn/backend/pyproject.toml) so the
+    # two Python trees are linted to the same standard.
+    "B904",  # raise-without-from-inside-except
+    "E741",  # ambiguous variable name (l/I/O)
+    # UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. Declined
+    # deliberately: the two are NOT interchangeable. `str(X.MEMBER)` returns
+    # "X.MEMBER" for a str-Enum but "member_value" for a StrEnum, so the rewrite
+    # silently changes anything that formats a member into a log line, a JSON
+    # payload, or a wire protocol. Five classes are affected (DeviceType,
+    # ScanType x2, ThemeMode, Platform), several of which cross the WebSocket
+    # boundary to the controller. Revisit only with tests that pin the string
+    # form of every member.
+    "UP042",
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["freesdn_agent"]
 
 [tool.mypy]

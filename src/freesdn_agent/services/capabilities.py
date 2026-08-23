@@ -15,7 +15,6 @@ Computed lazily at agent startup + refreshed on heartbeat. Cheap
 from __future__ import annotations
 
 import logging
-import os
 import platform
 import sys
 
@@ -31,22 +30,16 @@ def _has_scapy() -> bool:
 
 
 def _has_raw_socket_privilege() -> bool:
-    """Crude probe for whether the process can open a raw socket.
+    """Whether the process can open a raw socket.
 
-    On Unix, check effective UID. On Windows, query the
-    administrator group. Doesn't actually open a socket (that's
-    intrusive); just checks the prerequisites.
+    Delegates to the one implementation in ``utils.privileges``. This used to be
+    its own euid check, which reported the agent's OWN packaged deployment
+    (non-root + CAP_NET_RAW) as unprivileged and therefore never advertised the
+    ARP scanner on it.
     """
-    if platform.system() == "Windows":
-        try:
-            import ctypes
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())
-        except Exception:
-            return False
-    try:
-        return os.geteuid() == 0  # type: ignore[attr-defined]
-    except AttributeError:
-        return False
+    from freesdn_agent.utils.privileges import has_raw_socket_capability
+
+    return has_raw_socket_capability()
 
 
 def _resolve_windows_friendly_name(guid: str) -> str | None:

@@ -8,7 +8,6 @@ PySide6 — namely the daemon-mode CI runs.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional, Set
 
 
 class InventoryRow:
@@ -53,13 +52,13 @@ class InventoryRow:
         self.raw = raw
 
 
-def normalize_mac(mac: Optional[str]) -> str:
+def normalize_mac(mac: str | None) -> str:
     if not mac:
         return ""
     return mac.replace(":", "").replace("-", "").replace(".", "").upper()
 
 
-def format_last_seen(raw: Optional[str]) -> str:
+def format_last_seen(raw: str | None) -> str:
     if not raw:
         return "—"
     try:
@@ -73,9 +72,9 @@ def format_last_seen(raw: Optional[str]) -> str:
 
 
 def merge_into_inventory(
-    managed_devices: List[dict],
-    discovered_hosts: List[dict],
-) -> List[InventoryRow]:
+    managed_devices: list[dict],
+    discovered_hosts: list[dict],
+) -> list[InventoryRow]:
     """Collapse the two lists by MAC, then by IP.
 
     When the same MAC appears in both lists the Managed row wins and
@@ -90,9 +89,9 @@ def merge_into_inventory(
     Discovered (the agent's scan row, which DID capture a MAC). IP is
     unique per site/subnet so collapsing on it is safe.
     """
-    rows: List[InventoryRow] = []
-    managed_macs: Set[str] = set()
-    managed_ips: Set[str] = set()
+    rows: list[InventoryRow] = []
+    managed_macs: set[str] = set()
+    managed_ips: set[str] = set()
 
     for dev in managed_devices:
         mac = normalize_mac(dev.get("mac_address") or dev.get("mac"))

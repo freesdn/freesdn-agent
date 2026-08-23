@@ -48,9 +48,11 @@ class _ConcurrentServer:
         self.port = _free_port()
         self._server: websockets.WebSocketServer | None = None
 
-    async def __aenter__(self) -> "_ConcurrentServer":
+    async def __aenter__(self) -> _ConcurrentServer:
         self._server = await websockets.serve(
-            self._handle, "127.0.0.1", self.port,
+            self._handle,
+            "127.0.0.1",
+            self.port,
         )
         return self
 
@@ -117,12 +119,13 @@ async def test_slow_handler_does_not_block_subsequent_commands(fake_keyring) -> 
             async def _both_started():
                 while len(started) < 2:
                     await asyncio.sleep(0.02)
+
             await asyncio.wait_for(_both_started(), timeout=3.0)
         finally:
             await client.close()
             try:
                 await asyncio.wait_for(run_task, timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 run_task.cancel()
 
     # Both handlers must have started within a short window — the
@@ -137,7 +140,6 @@ async def test_close_drains_inflight_handlers(fake_keyring) -> None:
     """A handler running when close() is called should get to finish
     (within the 5s budget) so its final WS report doesn't get lost."""
     finished = asyncio.Event()
-    sent_after_close: list[dict[str, Any]] = []
 
     async def handler(msg: dict) -> None:
         await asyncio.sleep(0.3)
@@ -160,11 +162,24 @@ async def test_close_drains_inflight_handlers(fake_keyring) -> None:
         finally:
             try:
                 await asyncio.wait_for(run_task, timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 run_task.cancel()
 
-        # The handler reached its end successfully
+        # The handler reached its end successfully...
         assert finished.is_set()
+        # ...and, which is the point of the test, its report actually REACHED
+        # the server. Asserting only that the handler finished would pass even
+        # if close() had torn the socket down before the send landed, which is
+        # precisely the loss this drain exists to prevent. The unused
+        # sent_after_close list that sat here was the half-written version of
+        # this assertion.
+        results = [m for m in server.received if m.get("type") == "action_result"]
+        assert results, (
+            "handler finished but its final report never reached the server; "
+            "close() drained the handler without delivering its send"
+        )
+        assert results[-1]["payload"]["status"] == "ok"
+        assert results[-1]["command_id"] == "1"
 
 
 @pytest.mark.asyncio
@@ -195,5 +210,5 @@ async def test_handler_exception_does_not_kill_receiver(fake_keyring) -> None:
             await client.close()
             try:
                 await asyncio.wait_for(run_task, timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 run_task.cancel()

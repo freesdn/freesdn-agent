@@ -10,8 +10,10 @@ via the ``update_schedule`` WebSocket command for hot-reload.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
+from freesdn_agent.utils.aio import StoppableSleeper
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class CronExpression:
         N-M/S   - range with step
     """
 
-    __slots__ = ("_fields", "_expression")
+    __slots__ = ("_fields", "_expression", "_dom_restricted", "_dow_restricted")
 
     def __init__(self, expression: str):
         self._expression = expression.strip()
@@ -66,6 +68,13 @@ class CronExpression:
             self._parse_field(parts[i], ranges[i][0], ranges[i][1])
             for i in range(5)
         ]
+
+        # "Restricted" means the operator wrote something other than a bare
+        # wildcard. It cannot be inferred from the parsed set: "*" and "0-6"
+        # both yield every weekday, but only the second is a restriction the
+        # POSIX OR rule applies to.
+        self._dom_restricted = parts[2].strip() not in ("*", "?")
+        self._dow_restricted = parts[4].strip() not in ("*", "?")
 
     @staticmethod
     def _parse_field(field: str, lo: int, hi: int) -> set[int]:
@@ -109,23 +118,69 @@ class CronExpression:
         return values
 
     def matches(self, dt: datetime) -> bool:
-        """Check if a datetime matches this cron expression."""
+        """Check if a datetime matches this cron expression.
+
+        THE DAY FIELDS ARE OR-ED WHEN BOTH ARE RESTRICTED, which is the POSIX /
+        Vixie rule and surprises everyone once: "if both fields are restricted
+        (i.e. are not ``*``), the command runs when EITHER matches".
+
+        This used to AND them, so ``0 0 1 * 1`` -- read by any operator as "the
+        1st of the month, and every Monday" -- fired only on a 1st that happened
+        to also be a Monday. About once every seven months instead of roughly
+        five times a month, with nothing to say so. Verified against the old
+        code before changing it:
+
+            0 0 1 * 1   2026-06-01 (Mon, 1st)  True
+                        2026-06-08 (Mon)       False   <- should fire
+                        2026-07-01 (Wed, 1st)  False   <- should fire
+        """
         minute, hour, day, month = dt.minute, dt.hour, dt.day, dt.month
         # isoweekday: Mon=1 .. Sun=7 → cron convention: Sun=0
         weekday = dt.isoweekday() % 7
 
-        return (
-            minute in self._fields[0]
-            and hour in self._fields[1]
-            and day in self._fields[2]
-            and month in self._fields[3]
-            and weekday in self._fields[4]
-        )
+        if not (minute in self._fields[0] and hour in self._fields[1]):
+            return False
+        if month not in self._fields[3]:
+            return False
+
+        dom_restricted = self._dom_restricted
+        dow_restricted = self._dow_restricted
+        dom_match = day in self._fields[2]
+        dow_match = weekday in self._fields[4]
+
+        if dom_restricted and dow_restricted:
+            return dom_match or dow_match
+        # Exactly one restricted (or neither): the unrestricted one matches
+        # everything, so AND is the same as OR and this is just both.
+        return dom_match and dow_match
 
     @property
     def fires_per_hour(self) -> int:
-        """Estimate how many times per hour this expression fires."""
+        """How many times this fires within an hour that it fires in."""
         return len(self._fields[0])
+
+    @property
+    def min_gap_minutes(self) -> int:
+        """Smallest gap, in minutes, between two consecutive firings.
+
+        The guard in ``_load_schedules`` says it rejects anything firing more
+        often than every N minutes, and it measured FREQUENCY instead --
+        ``fires_per_hour``. Those differ: ``0,1,2,3,4 * * * *`` is five firings
+        an hour, which passed a twelve-an-hour limit, while actually running
+        five scans in five consecutive minutes and then sleeping for fifty-five.
+        A minimum-interval guard has to measure the interval.
+
+        Wraps around the hour boundary, so ``0,59 * * * *`` is correctly a gap
+        of one minute rather than fifty-nine.
+        """
+        minutes = sorted(self._fields[0])
+        if len(minutes) < 2:
+            # Fires at most once an hour -- unless the hour field admits
+            # consecutive hours, in which case the gap is the wrap.
+            return 60
+        gaps = [b - a for a, b in zip(minutes, minutes[1:], strict=False)]
+        gaps.append(60 - minutes[-1] + minutes[0])  # across the hour boundary
+        return min(gaps)
 
     def next_run(self, after: datetime) -> datetime:
         """
@@ -180,6 +235,8 @@ class SchedulerService:
         # (ScheduleEntry, CronExpression, last_fired, active_task | None)
         self._schedules: list[list] = []  # mutable inner lists for task tracking
 
+        self._sleeper = StoppableSleeper()
+
         if schedules:
             self._load_schedules(schedules)
 
@@ -192,13 +249,19 @@ class SchedulerService:
             try:
                 cron = CronExpression(entry.cron)
 
-                # Reject expressions that fire more often than every 5 minutes
-                if cron.fires_per_hour > (60 // _MIN_INTERVAL_MINUTES):
+                # Reject expressions that fire more often than every N minutes.
+                # Measured as the smallest GAP between firings, not as a count
+                # per hour: the two are not the same, and the count let five
+                # scans in five consecutive minutes through a twelve-an-hour
+                # limit.
+                if cron.min_gap_minutes < _MIN_INTERVAL_MINUTES:
                     logger.warning(
-                        "Schedule %r cron %r fires too frequently (>%d/hour) — skipping",
+                        "Schedule %r cron %r fires every %d minute(s), less than the "
+                        "%d-minute minimum — skipping",
                         entry.name,
                         entry.cron,
-                        60 // _MIN_INTERVAL_MINUTES,
+                        cron.min_gap_minutes,
+                        _MIN_INTERVAL_MINUTES,
                     )
                     continue
 
@@ -242,14 +305,15 @@ class SchedulerService:
 
         while self._running:
             try:
-                await asyncio.sleep(_TICK_INTERVAL)
+                if await self._sleeper.sleep(_TICK_INTERVAL):
+                    break
             except asyncio.CancelledError:
                 break
 
             if not self._running:
                 break
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             await self._check_schedules(now)
 
     async def _check_schedules(self, now: datetime) -> None:
@@ -298,7 +362,7 @@ class SchedulerService:
 
         # Bounded concurrency
         async with self._scan_semaphore:
-            started = datetime.now(timezone.utc)
+            started = datetime.now(UTC)
             try:
                 try:
                     scan_type = ScanType(entry.scan_type)
@@ -312,7 +376,7 @@ class SchedulerService:
                 )
 
                 results = await self._scan_manager.run_scan(job)
-                duration = (datetime.now(timezone.utc) - started).total_seconds()
+                duration = (datetime.now(UTC) - started).total_seconds()
                 device_count = len(results) if results else 0
 
                 payload: dict[str, Any] = {
@@ -323,7 +387,7 @@ class SchedulerService:
                     "duration_seconds": duration,
                     "status": "completed",
                     "started_at": started.isoformat(),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
 
                 if results:
@@ -336,7 +400,7 @@ class SchedulerService:
                 )
 
             except Exception as exc:
-                duration = (datetime.now(timezone.utc) - started).total_seconds()
+                duration = (datetime.now(UTC) - started).total_seconds()
                 logger.exception("Scheduled scan %r failed", entry.name)
                 # Send as a tagged scan_result so the backend records the
                 # failure in the same agent_schedule_runs history table
@@ -350,7 +414,7 @@ class SchedulerService:
                         "error": str(exc) or "Scheduled scan failed",
                         "duration_seconds": duration,
                         "started_at": started.isoformat(),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     })
                 except Exception:
                     pass
@@ -358,3 +422,5 @@ class SchedulerService:
     def stop(self) -> None:
         """Signal the scheduler to stop."""
         self._running = False
+        # Wake the tick so shutdown does not wait out the remainder of it.
+        self._sleeper.wake()

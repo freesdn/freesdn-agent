@@ -5,65 +5,61 @@ The primary application window containing all UI components.
 """
 
 import logging
-from typing import Optional
+from datetime import datetime
 
+from PySide6.QtCore import Signal, Slot
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSplitter,
-    QStatusBar,
-    QMenuBar,
-    QMenu,
-    QToolBar,
-    QTabWidget,
-    QLabel,
-    QMessageBox,
     QApplication,
+    QMainWindow,
+    QMessageBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QSize, Signal, Slot
-from PySide6.QtGui import QAction, QIcon, QCloseEvent
 
-from freesdn_agent import __version__, __app_name__
-from freesdn_agent.core.config import get_config, Config
+from freesdn_agent import __app_name__, __version__
+from freesdn_agent.core.config import get_config
 from freesdn_agent.core.constants import (
-    WINDOW_MIN_WIDTH,
     WINDOW_MIN_HEIGHT,
-    WINDOW_DEFAULT_WIDTH,
-    WINDOW_DEFAULT_HEIGHT,
+    WINDOW_MIN_WIDTH,
 )
+from freesdn_agent.services.scan_manager import ScanType, get_scan_manager
+from freesdn_agent.ui.dialogs.about import AboutDialog
+from freesdn_agent.ui.dialogs.settings import SettingsDialog
+from freesdn_agent.ui.styles.theme import ThemeManager, ThemeMode
 from freesdn_agent.ui.widgets.connection_panel import ConnectionPanel
-from freesdn_agent.ui.widgets.scan_panel import ScanPanel
-from freesdn_agent.ui.widgets.results_table import ResultsTable
-from freesdn_agent.ui.widgets.progress_widget import ProgressWidget
-from freesdn_agent.ui.widgets.status_bar import AgentStatusBar
-from freesdn_agent.ui.widgets.managed_devices_panel import ManagedDevicesPanel
 from freesdn_agent.ui.widgets.discovery_panel import DiscoveryPanel
 from freesdn_agent.ui.widgets.inventory_panel import InventoryPanel
-from freesdn_agent.ui.dialogs.settings import SettingsDialog
-from freesdn_agent.ui.dialogs.about import AboutDialog
-from freesdn_agent.ui.styles.theme import ThemeManager, ThemeMode
-from freesdn_agent.services.scan_manager import get_scan_manager, ScanType
-from freesdn_agent.services.device_cache import get_device_cache, refresh_device_cache
+from freesdn_agent.ui.widgets.managed_devices_panel import ManagedDevicesPanel
+from freesdn_agent.ui.widgets.progress_widget import ProgressWidget
+from freesdn_agent.ui.widgets.results_table import ResultsTable
+from freesdn_agent.ui.widgets.scan_panel import ScanPanel
+from freesdn_agent.ui.widgets.status_bar import AgentStatusBar
+from freesdn_agent.utils.export import write_csv
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
     """Main application window."""
-    
+
     # Signals
     scan_started = Signal()
     scan_stopped = Signal()
     scan_completed = Signal(list)  # List of discovered devices
-    
-    def __init__(self, parent: Optional[QWidget] = None):
+
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        
+        # Results the Export action writes. Initialised here because the
+        # action carries a Ctrl+E shortcut, which can fire before any scan
+        # has run -- reading an unset attribute there would raise instead of
+        # telling the operator there is nothing to export.
+        self._last_results: list = []
+
         self.config = get_config()
         self.scan_manager = get_scan_manager()
-        
+
         self._setup_window()
         self._create_menu_bar()
         self._create_toolbar()
@@ -71,9 +67,9 @@ class MainWindow(QMainWindow):
         self._create_status_bar()
         self._connect_scan_manager()
         self._restore_geometry()
-        
+
         logger.info("Main window initialized")
-    
+
     def _connect_scan_manager(self) -> None:
         """Connect scan manager signals to UI."""
         self.scan_manager.scan_started.connect(self._on_scan_started)
@@ -83,117 +79,117 @@ class MainWindow(QMainWindow):
         self.scan_manager.device_found.connect(self._on_device_found)
         self.scan_manager.scanner_started.connect(self._on_scanner_started)
         self.scan_manager.scanner_finished.connect(self._on_scanner_finished)
-    
+
     def _setup_window(self) -> None:
         """Configure window properties."""
         self.setWindowTitle(f"{__app_name__} v{__version__}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
-        
+
         # Set window icon (if available)
         # self.setWindowIcon(QIcon(":/icons/app.png"))
-    
+
     def _create_menu_bar(self) -> None:
         """Create the application menu bar."""
         menubar = self.menuBar()
-        
+
         # File menu
         file_menu = menubar.addMenu("&File")
-        
+
         self.action_connect = QAction("&Connect to FreeSDN...", self)
         self.action_connect.setShortcut("Ctrl+Shift+C")
         self.action_connect.triggered.connect(self._on_connect)
         file_menu.addAction(self.action_connect)
-        
+
         file_menu.addSeparator()
-        
+
         self.action_export = QAction("&Export Results...", self)
         self.action_export.setShortcut("Ctrl+E")
         self.action_export.setEnabled(False)
         self.action_export.triggered.connect(self._on_export)
         file_menu.addAction(self.action_export)
-        
+
         file_menu.addSeparator()
-        
+
         self.action_exit = QAction("E&xit", self)
         self.action_exit.setShortcut("Alt+F4")
         self.action_exit.triggered.connect(self.close)
         file_menu.addAction(self.action_exit)
-        
+
         # Scan menu
         scan_menu = menubar.addMenu("&Scan")
-        
+
         self.action_quick_scan = QAction("&Quick Scan", self)
         self.action_quick_scan.setShortcut("F5")
         self.action_quick_scan.triggered.connect(self._on_quick_scan)
         scan_menu.addAction(self.action_quick_scan)
-        
+
         self.action_camera_scan = QAction("&Camera Scan", self)
         self.action_camera_scan.setShortcut("F6")
         self.action_camera_scan.triggered.connect(self._on_camera_scan)
         scan_menu.addAction(self.action_camera_scan)
-        
+
         self.action_voip_scan = QAction("&VoIP Scan", self)
         self.action_voip_scan.setShortcut("F7")
         self.action_voip_scan.triggered.connect(self._on_voip_scan)
         scan_menu.addAction(self.action_voip_scan)
-        
+
         self.action_full_scan = QAction("&Full Scan", self)
         self.action_full_scan.setShortcut("F8")
         self.action_full_scan.triggered.connect(self._on_full_scan)
         scan_menu.addAction(self.action_full_scan)
-        
+
         scan_menu.addSeparator()
-        
+
         self.action_stop_scan = QAction("&Stop Scan", self)
         self.action_stop_scan.setShortcut("Escape")
         self.action_stop_scan.setEnabled(False)
         self.action_stop_scan.triggered.connect(self._on_stop_scan)
         scan_menu.addAction(self.action_stop_scan)
-        
+
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
-        
+
         self.action_settings = QAction("&Settings...", self)
         self.action_settings.setShortcut("Ctrl+,")
         self.action_settings.triggered.connect(self._on_settings)
         tools_menu.addAction(self.action_settings)
-        
+
         # View menu
         view_menu = menubar.addMenu("&View")
-        
+
         theme_menu = view_menu.addMenu("Theme")
-        
+
         self.action_theme_system = QAction("Follow System", self)
         self.action_theme_system.setCheckable(True)
         self.action_theme_system.triggered.connect(lambda: self._on_theme_change(ThemeMode.SYSTEM))
         theme_menu.addAction(self.action_theme_system)
-        
+
         self.action_theme_dark = QAction("Dark", self)
         self.action_theme_dark.setCheckable(True)
         self.action_theme_dark.triggered.connect(lambda: self._on_theme_change(ThemeMode.DARK))
         theme_menu.addAction(self.action_theme_dark)
-        
+
         self.action_theme_light = QAction("Light", self)
         self.action_theme_light.setCheckable(True)
         self.action_theme_light.triggered.connect(lambda: self._on_theme_change(ThemeMode.LIGHT))
         theme_menu.addAction(self.action_theme_light)
-        
+
         # Update checkmarks based on current theme
         self._update_theme_menu()
-        
+
         # Help menu
         help_menu = menubar.addMenu("&Help")
-        
+
         self.action_about = QAction("&About...", self)
         self.action_about.triggered.connect(self._on_about)
         help_menu.addAction(self.action_about)
-    
+
     def _create_toolbar(self) -> None:
         """Create the main toolbar."""
         # Note: Scan buttons removed from toolbar to avoid duplicate UI.
         # Use the Network Discovery panel or Scan menu instead.
         pass
-    
+
     def _create_central_widget(self) -> None:
         """Create the main content area with a tabbed layout.
 
@@ -309,38 +305,37 @@ class MainWindow(QMainWindow):
         # ── Progress bar (always visible) ─────────────────────────
         self.progress_widget = ProgressWidget()
         main_layout.addWidget(self.progress_widget)
-    
+
     def _create_status_bar(self) -> None:
         """Create the status bar."""
         self.status_bar = AgentStatusBar()
         self.setStatusBar(self.status_bar)
-    
+
     def _restore_geometry(self) -> None:
         """Restore window geometry from config."""
         ui = self.config.ui
-        
+
         # Set size
         self.resize(ui.window_width, ui.window_height)
-        
+
         # Set position if saved
         if ui.window_x is not None and ui.window_y is not None:
             self.move(ui.window_x, ui.window_y)
         else:
             # Center on screen
             self._center_on_screen()
-    
+
     def _center_on_screen(self) -> None:
         """Center the window on the primary screen."""
         from PySide6.QtWidgets import QApplication
-        from PySide6.QtGui import QScreen
-        
+
         screen = QApplication.primaryScreen()
         if screen:
             geometry = screen.availableGeometry()
             x = (geometry.width() - self.width()) // 2 + geometry.x()
             y = (geometry.height() - self.height()) // 2 + geometry.y()
             self.move(x, y)
-    
+
     def _save_geometry(self) -> None:
         """Save window geometry to config."""
         self.config.ui.window_width = self.width()
@@ -348,9 +343,9 @@ class MainWindow(QMainWindow):
         self.config.ui.window_x = self.x()
         self.config.ui.window_y = self.y()
         self.config.save()
-    
+
     # --- Event Handlers ---
-    
+
     def closeEvent(self, event: QCloseEvent) -> None:
         """Handle window close event.
 
@@ -404,40 +399,72 @@ class MainWindow(QMainWindow):
             tray.update_state(connected=connected, scanning=scanning)
         except Exception:
             logger.debug("Tray update failed", exc_info=True)
-    
+
     # --- Action Slots ---
-    
+
     @Slot()
     def _on_connect(self) -> None:
         """Handle connect action."""
         self.connection_panel.show_connect_dialog()
-    
+
     @Slot()
     def _on_export(self) -> None:
-        """Handle export action."""
-        # TODO: Implement export to CSV
-        pass
-    
+        """Write the current scan results to a CSV file.
+
+        This was a ``pass``. The menu item is not decorative -- it carries a
+        Ctrl+E shortcut and ``_on_scan_finished`` ENABLES it as soon as a scan
+        returns anything, so after any successful scan an operator could reach
+        it, press it, and get no dialog, no file and no error.
+        """
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        results = list(self._last_results or [])
+        if not results:
+            # Reachable if the menu is triggered by shortcut between scans.
+            QMessageBox.information(self, "Export Results", "There are no results to export.")
+            return
+
+        default_name = f"freesdn-scan-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Scan Results", default_name, "CSV files (*.csv);;All files (*)"
+        )
+        if not path:
+            return  # cancelled
+
+        try:
+            # newline="" is required by the csv module. Without it Windows turns
+            # each row ending into a doubled carriage return and every other row
+            # of the file shows up blank in Excel.
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                write_csv(fh, results)
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Export Failed", f"Could not write {path}:\n{exc}"
+            )
+            return
+
+        self.progress_widget.set_status(f"Exported {len(results)} result(s) to {path}")
+
     @Slot()
     def _on_quick_scan(self) -> None:
         """Start a quick scan."""
         self._start_scan(ScanType.QUICK)
-    
+
     @Slot()
     def _on_camera_scan(self) -> None:
         """Start a camera-focused scan."""
         self._start_scan(ScanType.CAMERA)
-    
+
     @Slot()
     def _on_voip_scan(self) -> None:
         """Start a VoIP-focused scan."""
         self._start_scan(ScanType.VOIP)
-    
+
     @Slot()
     def _on_full_scan(self) -> None:
         """Start a full scan."""
         self._start_scan(ScanType.FULL)
-    
+
     def _start_scan(self, scan_type: ScanType) -> None:
         """Start a scan of the specified type.
 
@@ -499,13 +526,13 @@ class MainWindow(QMainWindow):
                 "Scan Failed",
                 "Could not start scan. A scan may already be in progress."
             )
-    
+
     @Slot()
     def _on_stop_scan(self) -> None:
         """Stop the current scan."""
         self.scan_manager.stop_scan()
         self.scan_panel.stop_scan()
-    
+
     @Slot(str)
     def _on_scan_started(self, scan_type: str) -> None:
         """Handle scan started from manager."""
@@ -522,6 +549,7 @@ class MainWindow(QMainWindow):
     def _on_scan_finished(self, results: list) -> None:
         """Handle scan finished from manager."""
         self.action_stop_scan.setEnabled(False)
+        self._last_results = results
         self.action_export.setEnabled(len(results) > 0)
         self.scan_panel.on_scan_completed()
         self.progress_widget.set_scanning(False)
@@ -574,7 +602,8 @@ class MainWindow(QMainWindow):
           elsewhere in the org)
         """
         from dataclasses import asdict as _asdict
-        from datetime import datetime as _dt, date as _date
+        from datetime import date as _date
+        from datetime import datetime as _dt
 
         def _json_safe(value):
             if isinstance(value, (_dt, _date)):
@@ -722,12 +751,12 @@ class MainWindow(QMainWindow):
         """Handle scan error from manager."""
         logger.error(f"Scan error: {error}")
         self.progress_widget.set_status(f"Error: {error}")
-    
+
     @Slot(object)
     def _on_scan_progress(self, progress) -> None:
         """Handle scan progress update."""
         self.progress_widget.update_progress(progress)
-    
+
     @Slot(object)
     def _on_device_found(self, result) -> None:
         """Handle device found during scan."""
@@ -739,30 +768,30 @@ class MainWindow(QMainWindow):
                 device_dict['device_type'] = result.device_type.value if hasattr(result.device_type, 'value') else str(result.device_type)
         else:
             device_dict = dict(result) if not isinstance(result, dict) else result
-        
+
         mac = device_dict.get("mac_address")
         ip = device_dict.get("ip_address")
-        
+
         # Add to discovery panel (it will filter out managed devices)
         added = self.discovery_panel.add_device(device_dict)
-        
+
         if added:
             logger.debug(f"Device discovered: {ip} (MAC: {mac})")
         else:
             logger.debug(f"Device {ip} filtered (already managed)")
-        
+
         self.progress_widget.increment_devices_found()
-    
+
     @Slot(str)
     def _on_scanner_started(self, scanner_name: str) -> None:
         """Handle scanner started."""
         self.progress_widget.set_status(f"Running {scanner_name}...")
-    
+
     @Slot(str)
     def _on_scanner_finished(self, scanner_name: str) -> None:
         """Handle scanner finished."""
         logger.debug(f"Scanner finished: {scanner_name}")
-    
+
     @Slot()
     def _on_settings(self) -> None:
         """Open settings dialog."""
@@ -770,21 +799,21 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             # Reload config
             self.config = get_config()
-    
+
     @Slot()
     def _on_about(self) -> None:
         """Show about dialog."""
         dialog = AboutDialog(self)
         dialog.exec()
-    
+
     @Slot(bool)
     def _on_connection_changed(self, connected: bool) -> None:
         """Handle connection status change."""
         self.status_bar.set_connection_status(connected)
-        
+
         # Enable/disable adopt functionality
         self.discovery_panel.set_adopt_enabled(connected)
-        
+
         # Load managed devices from server when connected
         if connected:
             self._load_managed_devices()
@@ -794,30 +823,30 @@ class MainWindow(QMainWindow):
             self.managed_panel.set_status("Not connected")
             self.managed_panel.stop_auto_refresh()
             self.discovery_panel.set_managed_macs(set())
-    
+
     def _load_managed_devices(self) -> None:
         """Load managed devices from FreeSDN server."""
         client = self.connection_panel.get_client()
         site_id = self.connection_panel.get_site_id()
-        
+
         if not client or not site_id:
             return
-        
+
         try:
             self.managed_panel.set_status("Loading devices...")
             QApplication.processEvents()
-            
+
             # Fetch devices for the selected site (for display)
             response = client.get_devices(site_id=site_id)
-            
+
             # Handle paginated response
             if isinstance(response, dict):
                 site_devices = response.get("items", response.get("data", []))
             else:
                 site_devices = response if response else []
-            
+
             self.managed_panel.set_devices(site_devices)
-            self.managed_panel.set_status(f"Connected to site")
+            self.managed_panel.set_status("Connected to site")
             self._latest_managed = list(site_devices)
 
             # Pull discovered hosts from the backend so the unified
@@ -845,7 +874,7 @@ class MainWindow(QMainWindow):
                 all_devices = all_response.get("items", all_response.get("data", []))
             else:
                 all_devices = all_response if all_response else []
-            
+
             # Build MAC set from all devices
             # Support both 'mac' and 'mac_address' field names (API returns 'mac')
             all_macs = set()
@@ -854,7 +883,7 @@ class MainWindow(QMainWindow):
                 if mac:
                     normalized = mac.replace(":", "").replace("-", "").replace(".", "").upper()
                     all_macs.add(normalized)
-            
+
             # Update discovery panel with ALL managed MACs for filtering
             self.discovery_panel.set_managed_macs(all_macs)
 
@@ -880,11 +909,11 @@ class MainWindow(QMainWindow):
                 f"Loaded {len(site_devices)} site devices, {len(all_macs)} total MACs, "
                 f"{len(controller_ips)} controller IPs for filtering"
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to load managed devices: {e}")
             self.managed_panel.set_status(f"Error: {e}")
-    
+
     @Slot()
     def _on_refresh_managed(self) -> None:
         """Handle refresh request for managed devices."""
@@ -920,13 +949,13 @@ class MainWindow(QMainWindow):
             self._on_adopt_devices([host])
         except Exception:
             logger.exception("Adopt from inventory panel failed")
-    
+
     @Slot(dict)
     def _on_managed_device_selected(self, device: dict) -> None:
         """Handle device selection in managed panel."""
         # TODO: Show device details panel
         logger.debug(f"Managed device selected: {device.get('name')} ({device.get('ip_address')})")
-    
+
     @Slot(str)
     def _on_scan_requested(self, scan_type: str) -> None:
         """Handle scan request from scan panel."""
@@ -987,26 +1016,26 @@ class MainWindow(QMainWindow):
             )
         except Exception:
             logger.exception("LLDP capture-during-full-scan failed")
-    
+
     @Slot(dict)
     def _on_device_selected(self, device: dict) -> None:
         """Handle device selection in discovery panel."""
         # TODO: Show device details panel
         logger.debug(f"Device selected: {device.get('ip_address')}")
-    
+
     @Slot(list)
     def _on_adopt_devices(self, devices: list) -> None:
         """Handle adopt selected devices request."""
         logger.info(f"Adopt {len(devices)} selected devices requested")
         self._adopt_devices(devices)
-    
+
     @Slot()
     def _on_adopt_all(self) -> None:
         """Handle adopt all devices request."""
         all_devices = self.discovery_panel.get_devices_with_mac()
         logger.info(f"Adopt all {len(all_devices)} devices requested")
         self._adopt_devices(all_devices)
-    
+
     def _adopt_devices(self, devices: list) -> None:
         """Open the AdoptDialog to review + adopt selected devices.
 
@@ -1094,7 +1123,7 @@ class MainWindow(QMainWindow):
         # Re-pull managed devices so the new rows appear in the
         # Managed tab + are added to the dedup filter for future scans.
         self._load_managed_devices()
-    
+
     def _on_theme_change(self, mode: ThemeMode) -> None:
         """Handle theme change from menu."""
         theme_manager = ThemeManager.instance()
@@ -1105,7 +1134,7 @@ class MainWindow(QMainWindow):
             self.config.ui.theme = mode.value
             self.config.save()
             self._update_theme_menu()
-    
+
     def _update_theme_menu(self) -> None:
         """Update theme menu checkmarks."""
         current_mode = self.config.ui.theme

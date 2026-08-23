@@ -13,11 +13,12 @@ import argparse
 import asyncio
 import getpass
 import logging
+import os
 import platform
 import socket
 import sys
 
-from freesdn_agent import __version__, __app_name__
+from freesdn_agent import __version__
 from freesdn_agent.core.config import Config, get_config
 
 logger = logging.getLogger(__name__)
@@ -153,27 +154,27 @@ def _cmd_register(args: argparse.Namespace) -> int:
         payload["site_id"] = args.site_id
 
     try:
-        # We need admin auth to register.  Ask for credentials interactively.
-        email = input("Admin email: ").strip()
-        password = getpass.getpass("Admin password: ").strip()
-
-        with httpx.Client(base_url=server, timeout=30) as client:
-            # Login first
-            login_resp = client.post("/api/v1/auth/login", json={"login": email, "password": password})
-            if login_resp.status_code != 200:
-                print(f"Login failed: {login_resp.status_code} — {login_resp.text}")
-                return 1
-
-            tokens = login_resp.json().get("tokens", login_resp.json())
-            headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-
-            # Register agent
+        # One login path for the whole CLI. This used to be a second, subtly
+        # different copy of _login: it had already drifted once (the /auth/login
+        # to /auth/token migration was applied here and not there), and it would
+        # have needed the same cookie fix applied twice.
+        login = _login(server)
+        if login is None:
+            return 1
+        client, headers = login
+        # try/finally, not `with`: _login has already made a request on this
+        # client, and httpx refuses to re-enter one ("Cannot open a client
+        # instance more than once"). Matches how every other command here
+        # handles it.
+        try:
             resp = client.post("/api/v1/agents/register", json=payload, headers=headers)
             if resp.status_code not in (200, 201):
-                print(f"Registration failed: {resp.status_code} — {resp.text}")
+                print(f"Registration failed: {resp.status_code} — {resp.text}", file=sys.stderr)
                 return 1
 
             data = resp.json()
+        finally:
+            client.close()
 
         agent_id = data["agent_id"]
         agent_key = data["agent_key"]
@@ -208,8 +209,13 @@ def _cmd_register(args: argparse.Namespace) -> int:
         print("  2. Run:  freesdn-agent daemon")
         return 0
 
-    except httpx.RequestError as e:
+    except httpx.HTTPError as e:
         print(f"Connection error: {e}")
+        return 1
+    except (KeyError, ValueError) as e:
+        # An unexpected/again-changed response shape must not surface as a raw
+        # traceback on the first command an operator ever runs.
+        print(f"Unexpected server response during registration: {e!r}")
         return 1
 
 
@@ -375,24 +381,70 @@ def _cmd_unregister(args: argparse.Namespace) -> int:
 # Auth helpers — shared by list-discovered + adopt
 # -----------------------------------------------------------------
 
-def _login_interactive(server: str):
+def _read_credentials(what: str = "FreeSDN") -> tuple[str, str] | None:
+    """Credentials from the environment, or a prompt when there is a terminal.
+
+    Environment first so a deployment can be SCRIPTED. Registration is the
+    command the .deb postinst prints and every doc opens with, and until now it
+    could only be answered by a human at a TTY: ``getpass`` reads /dev/tty
+    rather than stdin, so piping a password did not work -- it HUNG, with no
+    output and no timeout, which is the worst way for a headless install to
+    fail.
+
+    Returns None (never blocks) when there is nothing to read from.
+    """
+    email = os.environ.get("FREESDN_EMAIL", "").strip()
+    password = os.environ.get("FREESDN_PASSWORD", "")
+    if email and password:
+        return email, password
+
+    if not sys.stdin.isatty():
+        print(
+            "No credentials available. Set FREESDN_EMAIL and FREESDN_PASSWORD, "
+            "or run this from a terminal where it can prompt.",
+            file=sys.stderr,
+        )
+        return None
+
+
+    email = input(f"{what} email: ").strip()
+    password = getpass.getpass(f"{what} password: ").strip()
+    if not email or not password:
+        print("Email and password are both required.", file=sys.stderr)
+        return None
+    return email, password
+
+
+def _login(server: str):
     """Login + return (httpx.Client, headers) for authenticated REST calls.
 
     Returns ``None`` on failure (caller exits 1). We don't reuse the
     sync ``FreeSDNClient`` from api/client.py here because its auth
     flow mutates persistent state on the keyring/config; the CLI is
     one-shot and should not change saved credentials.
+
+    THE COOKIE CLEAR BELOW IS LOAD-BEARING, and its absence is why every
+    authenticated CLI command returned 403 against a current controller.
+    ``/auth/token`` returns bearer tokens in the body AND sets the browser
+    session cookies (freesdn_access / freesdn_csrf / freesdn_refresh). httpx
+    stores them on the client, so the next request carried BOTH a bearer header
+    and a session cookie -- and the server's CSRF middleware deliberately
+    enforces CSRF for that combination, because an attacker who could send
+    "Authorization: Bearer garbage" alongside a victim's cookie would otherwise
+    bypass it. The agent is not a browser and has no use for those cookies at
+    all, so it drops them and authenticates purely as an API caller.
     """
-    import getpass
     import httpx
 
-    email = input("FreeSDN email: ").strip()
-    password = getpass.getpass("FreeSDN password: ").strip()
+    creds = _read_credentials()
+    if creds is None:
+        return None
+    email, password = creds
 
     # Use the OAuth2 password-grant endpoint (/auth/token) which returns raw
     # bearer tokens in the JSON body.  /auth/login is the browser endpoint and
-    # no longer carries tokens in JSON (tokens are set as
-    # httpOnly cookies for browsers; bearer header for API / agent callers).
+    # no longer carries tokens in JSON (tokens are set as httpOnly cookies for
+    # browsers; bearer header for API / agent callers).
     client = httpx.Client(base_url=server.rstrip("/"), timeout=60)
     try:
         resp = client.post(
@@ -402,14 +454,29 @@ def _login_interactive(server: str):
         )
     except httpx.HTTPError as exc:
         client.close()
-        print(f"Login transport error: {exc}")
+        print(f"Login transport error: {exc}", file=sys.stderr)
         return None
     if resp.status_code != 200:
         client.close()
-        print(f"Login failed: {resp.status_code} — {resp.text}")
+        print(f"Login failed: {resp.status_code} — {resp.text}", file=sys.stderr)
         return None
-    tokens = resp.json()
-    return client, {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    token = (resp.json() or {}).get("access_token")
+    if not token:
+        client.close()
+        print(
+            "Login succeeded but returned no access token. This build may be "
+            "talking to an incompatible server version.",
+            file=sys.stderr,
+        )
+        return None
+
+    client.cookies.clear()
+    return client, {"Authorization": f"Bearer {token}"}
+
+
+# Kept so anything importing the old name still works.
+_login_interactive = _login
 
 
 # -----------------------------------------------------------------

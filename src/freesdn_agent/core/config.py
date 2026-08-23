@@ -9,8 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
 from appdirs import user_config_dir
+from pydantic import BaseModel, Field
 
 from freesdn_agent import __app_name__
 
@@ -19,26 +19,26 @@ logger = logging.getLogger(__name__)
 
 class FreeSDNConnection(BaseModel):
     """FreeSDN server connection settings."""
-    
+
     url: str = ""
     site_id: str | None = None
     site_name: str | None = None
     # Note: Tokens stored in system keyring, not config file
-    
-    
+
+
 class ScanSettings(BaseModel):
     """Default scan settings."""
-    
+
     timeout: float = 3.0
     concurrency: int = 50
-    
+
     # Basic discovery scanners
     enable_arp: bool = True
     enable_icmp: bool = True
     enable_ports: bool = True
     enable_http: bool = True
     enable_banner: bool = True
-    
+
     # Protocol-specific scanners
     enable_onvif: bool = True
     enable_sadp: bool = True
@@ -51,7 +51,7 @@ class ScanSettings(BaseModel):
 
 class UISettings(BaseModel):
     """UI preferences."""
-    
+
     theme: str = "system"  # "system", "dark", or "light"
     window_width: int = 1100
     window_height: int = 750
@@ -123,24 +123,24 @@ class Config(BaseModel):
     schedules: list[ScheduleEntry] = Field(default_factory=list)
     passive: PassiveConfig = Field(default_factory=PassiveConfig)
     recent_interfaces: list[str] = Field(default_factory=list)
-    
+
     @classmethod
     def get_config_dir(cls) -> Path:
         """Get the platform-specific config directory."""
         config_dir = Path(user_config_dir(__app_name__, "FreeSDN"))
         config_dir.mkdir(parents=True, exist_ok=True)
         return config_dir
-    
+
     @classmethod
     def get_config_file(cls) -> Path:
         """Get the config file path."""
         return cls.get_config_dir() / "config.json"
-    
+
     @classmethod
     def load(cls) -> "Config":
         """Load configuration from disk or create default."""
         config_file = cls.get_config_file()
-        
+
         if config_file.exists():
             try:
                 data = json.loads(config_file.read_text(encoding="utf-8"))
@@ -148,14 +148,14 @@ class Config(BaseModel):
                 return cls.model_validate(data)
             except Exception as e:
                 logger.warning(f"Failed to load config: {e}, using defaults")
-        
+
         logger.info("Using default configuration")
         return cls()
-    
+
     def save(self) -> None:
         """Save configuration to disk."""
         config_file = self.get_config_file()
-        
+
         try:
             config_file.write_text(
                 self.model_dump_json(indent=2),
@@ -165,7 +165,7 @@ class Config(BaseModel):
         except Exception as e:
             logger.error(f"Failed to save config: {e}")
             raise
-    
+
     def update(self, **kwargs: Any) -> None:
         """Update config fields and save."""
         for key, value in kwargs.items():

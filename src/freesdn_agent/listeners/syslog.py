@@ -11,7 +11,7 @@ Requires root on Linux (port < 1024).
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from freesdn_agent.listeners.base import BaseListener, RateLimiter
@@ -90,7 +90,7 @@ def parse_syslog(raw: str, source_ip: str) -> dict[str, Any] | None:
         result["proc_id"] = m.group(6) if m.group(6) != "-" else ""
         result["msg_id"] = m.group(7) if m.group(7) != "-" else ""
         result["message"] = _sanitize_message(m.group(8).strip())
-        result["timestamp"] = datetime.now(timezone.utc).isoformat()
+        result["timestamp"] = datetime.now(UTC).isoformat()
         return result
 
     # Try RFC 3164
@@ -102,7 +102,7 @@ def parse_syslog(raw: str, source_ip: str) -> dict[str, Any] | None:
         result["syslog_timestamp"] = m.group(2)
         result["hostname"] = m.group(3)
         result["message"] = _sanitize_message(m.group(4).strip())
-        result["timestamp"] = datetime.now(timezone.utc).isoformat()
+        result["timestamp"] = datetime.now(UTC).isoformat()
         return result
 
     # Fallback: just extract priority if present
@@ -113,7 +113,7 @@ def parse_syslog(raw: str, source_ip: str) -> dict[str, Any] | None:
             result["facility"] = FACILITIES[pri >> 3] if (pri >> 3) < len(FACILITIES) else str(pri >> 3)
             result["severity"] = SEVERITIES[pri & 0x07]
             result["message"] = _sanitize_message(raw[end + 1:].strip())
-            result["timestamp"] = datetime.now(timezone.utc).isoformat()
+            result["timestamp"] = datetime.now(UTC).isoformat()
             return result
         except (ValueError, IndexError):
             pass
@@ -175,7 +175,7 @@ class SyslogListener(BaseListener):
                     message, source_ip = await asyncio.wait_for(
                         protocol.queue.get(), timeout=1.0
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 parsed = parse_syslog(message, source_ip)

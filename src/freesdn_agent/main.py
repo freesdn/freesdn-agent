@@ -12,11 +12,10 @@ robustness layer wired in:
   scans after the operator closes the window.
 """
 
-import sys
 import logging
-from pathlib import Path
+import sys
 
-from freesdn_agent import __version__, __app_name__
+from freesdn_agent import __app_name__, __version__
 from freesdn_agent.utils.logging import setup_logging
 from freesdn_agent.utils.privileges import check_admin_privileges, show_privilege_warning
 
@@ -40,9 +39,9 @@ def main() -> int:
 
     # Import Qt after logging setup
     try:
+        from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+        from PySide6.QtGui import QFont
         from PySide6.QtWidgets import QApplication, QMessageBox
-        from PySide6.QtCore import Qt, qInstallMessageHandler, QtMsgType
-        from PySide6.QtGui import QIcon, QFont
 
         # Install custom message handler to filter benign Qt warnings
         def qt_message_handler(mode, context, message):
@@ -94,10 +93,10 @@ def main() -> int:
         return 0
 
     # Import and create main window
-    from freesdn_agent.ui.main_window import MainWindow
-    from freesdn_agent.ui.styles.theme import ThemeManager, ThemeMode
     from freesdn_agent.core.config import Config
     from freesdn_agent.desktop import AgentTrayIcon
+    from freesdn_agent.ui.main_window import MainWindow
+    from freesdn_agent.ui.styles.theme import ThemeManager, ThemeMode
 
     # Load configuration
     config = Config.load()
@@ -121,7 +120,7 @@ def main() -> int:
         tray.quick_scan_requested.connect(window.trigger_quick_scan)
     # Expose tray to the window so it can flip badge colour when the
     # scan manager / WS connection state changes.
-    setattr(window, "_tray", tray)
+    window._tray = tray
 
     # Allow Qt's last-window-closed behaviour to be overridden so
     # closing the main window minimises to tray (if tray was created

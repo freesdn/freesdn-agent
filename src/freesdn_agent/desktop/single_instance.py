@@ -23,9 +23,9 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from platformdirs import user_data_dir
 
@@ -102,7 +102,7 @@ class SingleInstanceLock:
         exit. On collision with a stale PID (previous crash), silently
         reclaims the lock.
         """
-        for attempt in range(2):
+        for _attempt in range(2):
             try:
                 fd = os.open(
                     self.path,

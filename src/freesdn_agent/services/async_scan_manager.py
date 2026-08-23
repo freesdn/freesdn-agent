@@ -7,13 +7,13 @@ Mirrors ScanManager logic without any Qt dependency.
 
 import asyncio
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional
 
-from freesdn_agent.scanners.base import BaseScanner, ScanResult, ScanProgress
 from freesdn_agent.core.config import Config, get_config
+from freesdn_agent.scanners.base import BaseScanner, ScanProgress, ScanResult
 
 logger = logging.getLogger(__name__)
 

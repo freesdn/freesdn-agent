@@ -22,30 +22,7 @@ The row source determines what actions are available:
 
 import logging
 from datetime import datetime
-from typing import List, Optional, Set
 
-from freesdn_agent.ui.widgets.inventory_data import (
-    InventoryRow,
-    merge_into_inventory,
-    normalize_mac,
-    format_last_seen,
-)
-
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QComboBox,
-    QFrame,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
-    QTableView,
-    QVBoxLayout,
-    QWidget,
-)
 from PySide6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
@@ -56,6 +33,24 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableView,
+    QVBoxLayout,
+    QWidget,
+)
+
+from freesdn_agent.ui.widgets.inventory_data import (
+    InventoryRow,
+    merge_into_inventory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,14 +75,14 @@ class InventoryModel(QAbstractTableModel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._rows: List[InventoryRow] = []
+        self._rows: list[InventoryRow] = []
 
-    def set_rows(self, rows: List[InventoryRow]) -> None:
+    def set_rows(self, rows: list[InventoryRow]) -> None:
         self.beginResetModel()
         self._rows = rows
         self.endResetModel()
 
-    def get_row(self, source_row: int) -> Optional[InventoryRow]:
+    def get_row(self, source_row: int) -> InventoryRow | None:
         if 0 <= source_row < len(self._rows):
             return self._rows[source_row]
         return None
@@ -163,7 +158,7 @@ class InventoryPanel(QFrame):
     refresh_requested = Signal()
     row_selected = Signal(InventoryRow)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._setup_ui()
         self._refresh_timer = QTimer(self)
@@ -272,8 +267,8 @@ class InventoryPanel(QFrame):
 
     def set_inventory(
         self,
-        managed: List[dict],
-        discovered: List[dict],
+        managed: list[dict],
+        discovered: list[dict],
     ) -> None:
         rows = merge_into_inventory(managed, discovered)
         self.model.set_rows(rows)

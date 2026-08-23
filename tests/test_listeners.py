@@ -10,6 +10,7 @@ structured fields, and where a malformed packet could otherwise hang
 the agent (infinite loops on zero-length TLVs, OOM on jumbo payloads,
 crashes on truncated headers).
 """
+
 from __future__ import annotations
 
 import struct
@@ -38,10 +39,10 @@ from freesdn_agent.listeners.lldp import (
 from freesdn_agent.listeners.snmp_trap import _try_parse_snmp_trap
 from freesdn_agent.listeners.syslog import parse_syslog
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build TLV bytes from (type, payload) so tests stay readable
 # ---------------------------------------------------------------------------
+
 
 def _lldp_tlv(t: int, payload: bytes) -> bytes:
     """LLDP TLV header: 7 bits type + 9 bits length."""
@@ -63,6 +64,7 @@ def _cdp_frame(*tlvs: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 # LLDP
 # ---------------------------------------------------------------------------
+
 
 class TestLLDPParser:
     def test_full_neighbor_advertisement(self) -> None:
@@ -118,6 +120,7 @@ class TestLLDPParser:
 # CDP
 # ---------------------------------------------------------------------------
 
+
 class TestCDPParser:
     def test_full_cisco_advertisement(self) -> None:
         frame = _cdp_frame(
@@ -164,12 +167,10 @@ class TestCDPParser:
 # Syslog
 # ---------------------------------------------------------------------------
 
+
 class TestSyslogParser:
     def test_rfc5424_message(self) -> None:
-        raw = (
-            "<165>1 2026-05-24T10:11:12Z host1 myapp 9876 - "
-            "Connection from 10.0.0.1 accepted"
-        )
+        raw = "<165>1 2026-05-24T10:11:12Z host1 myapp 9876 - Connection from 10.0.0.1 accepted"
         out = parse_syslog(raw, "10.0.0.50")
         assert out is not None
         # PRI 165 = facility 20 (local4), severity 5 (notice)
@@ -228,6 +229,7 @@ class TestSyslogParser:
 # SNMP Trap
 # ---------------------------------------------------------------------------
 
+
 class TestSNMPTrapParser:
     def test_garbage_returns_none(self) -> None:
         """Random bytes shouldn't blow up the parser."""
@@ -247,8 +249,8 @@ class TestSNMPTrapParser:
     def test_v2c_trap_roundtrip(self) -> None:
         """Build a real SNMPv2c trap with pysnmp and parse it back."""
         try:
-            from pysnmp.proto.api import v2c
             from pyasn1.codec.ber import encoder
+            from pysnmp.proto.api import v2c
         except ImportError:
             pytest.skip("pysnmp not installed")
 
@@ -257,11 +259,16 @@ class TestSNMPTrapParser:
         v2c.apiMessage.set_community(msg, b"public")
         pdu = v2c.TrapPDU()
         v2c.apiTrapPDU.set_defaults(pdu)
-        v2c.apiTrapPDU.set_varbinds(pdu, [
-            (v2c.ObjectIdentifier("1.3.6.1.2.1.1.3.0"), v2c.TimeTicks(12345)),
-            (v2c.ObjectIdentifier("1.3.6.1.6.3.1.1.4.1.0"),
-             v2c.ObjectIdentifier("1.3.6.1.6.3.1.1.5.3")),  # linkDown
-        ])
+        v2c.apiTrapPDU.set_varbinds(
+            pdu,
+            [
+                (v2c.ObjectIdentifier("1.3.6.1.2.1.1.3.0"), v2c.TimeTicks(12345)),
+                (
+                    v2c.ObjectIdentifier("1.3.6.1.6.3.1.1.4.1.0"),
+                    v2c.ObjectIdentifier("1.3.6.1.6.3.1.1.5.3"),
+                ),  # linkDown
+            ],
+        )
         v2c.apiMessage.set_pdu(msg, pdu)
         raw = encoder.encode(msg)
 
@@ -279,8 +286,8 @@ class TestSNMPTrapParser:
         """Defence-in-depth: even on a fallback path, the community must
         not appear in the parsed output."""
         try:
-            from pysnmp.proto.api import v2c
             from pyasn1.codec.ber import encoder
+            from pysnmp.proto.api import v2c
         except ImportError:
             pytest.skip("pysnmp not installed")
 

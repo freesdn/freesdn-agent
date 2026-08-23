@@ -2,8 +2,8 @@
 Platform detection utilities for FreeSDN Agent.
 """
 
-import sys
 import platform
+import sys
 from enum import Enum
 
 
@@ -18,7 +18,7 @@ class Platform(str, Enum):
 def get_platform() -> Platform:
     """Detect the current platform."""
     system = platform.system().lower()
-    
+
     if system == "windows":
         return Platform.WINDOWS
     elif system == "linux":

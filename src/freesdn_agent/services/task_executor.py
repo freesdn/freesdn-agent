@@ -15,6 +15,13 @@ from freesdn_agent.services.async_scan_manager import AsyncScanManager, ScanJob,
 
 logger = logging.getLogger(__name__)
 
+#: Ceilings for proxy_http, whose parameters arrive over the wire.
+_PROXY_MAX_TIMEOUT = 120.0
+_PROXY_MAX_BYTES = 50_000_000
+
+#: Ceiling for any single command, whose timeout also arrives over the wire.
+_COMMAND_MAX_TIMEOUT = 600.0
+
 
 class TaskExecutor:
     """
@@ -48,7 +55,14 @@ class TaskExecutor:
         cmd_id = message.get("id", "")
         cmd_type = message.get("type", "")
         payload = message.get("payload", {})
-        timeout = message.get("timeout_seconds", 60)
+        # `or 60` rather than a .get default: an explicit "timeout_seconds": null
+        # satisfies .get(), and asyncio.wait_for(timeout=None) means WAIT FOREVER.
+        # One such message would pin a task slot for the life of the process, and
+        # the agent reports its own health by counting those slots -- so the
+        # symptom would be an agent that looks progressively busier and never
+        # recovers, with nothing in the log. Bounded above for the same reason
+        # proxy_http is: the value arrives over the wire.
+        timeout = min(float(message.get("timeout_seconds") or 60), _COMMAND_MAX_TIMEOUT)
 
         handler = self._HANDLERS.get(cmd_type)
         if not handler:
@@ -71,7 +85,7 @@ class TaskExecutor:
                 {"status": "completed", "result": result},
                 command_id=cmd_id,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Command %s timed out after %ds", cmd_type, timeout)
             await self._ws.send_report(
                 "error",
@@ -198,8 +212,9 @@ class TaskExecutor:
     ) -> dict:
         """Return health metrics."""
         try:
-            import psutil
             import sys as _sys
+
+            import psutil
             disk_path = "C:\\" if _sys.platform == "win32" else "/"
             return {
                 "cpu_percent": psutil.cpu_percent(interval=0),
@@ -231,7 +246,15 @@ class TaskExecutor:
     ) -> dict:
         """SNMP polling of a device."""
         ip = payload.get("ip_address", "")
-        community = payload.get("community", "public")
+        # KNOWN GAP: the caller's community string is accepted here and then
+        # dropped. ScanJob carries no community field, and SNMPScanner takes its
+        # own `communities` list at construction, so the poll below always uses
+        # the scanner's defaults. A controller that sends a non-default community
+        # gets a poll that silently fails against any device not answering to
+        # "public". Fixing it means threading a community through ScanJob into
+        # scanner construction; deliberately not attempted blind. Kept (rather
+        # than deleted) so the payload contract stays visible.
+        community = payload.get("community", "public")  # noqa: F841
         if not ip:
             return {"error": "No ip_address in payload"}
 
@@ -314,12 +337,24 @@ class TaskExecutor:
         url = payload.get("url")
         if not url:
             return {"error": "proxy_http requires a 'url'"}
+
+        # Only the two schemes this is for. aiohttp would reject most others
+        # anyway, but saying so here makes the refusal explicit and the error
+        # legible instead of a transport exception.
+        if not str(url).lower().startswith(("http://", "https://")):
+            return {"error": "proxy_http only supports http:// and https://", "target": url}
+
         method = str(payload.get("method") or "GET").upper()
         headers = payload.get("headers") or {}
         body = payload.get("body")
         verify_ssl = bool(payload.get("verify_ssl", False))
-        req_timeout = float(payload.get("timeout", 15))
-        max_bytes = int(payload.get("max_bytes", 5_000_000))
+
+        # Bound both, because both arrive from the wire. An unbounded timeout
+        # pins one of a small number of concurrent task slots for as long as the
+        # sender likes; an unbounded max_bytes lets a single response size the
+        # agent's memory. Defaults unchanged.
+        req_timeout = min(max(float(payload.get("timeout", 15)), 1.0), _PROXY_MAX_TIMEOUT)
+        max_bytes = min(max(int(payload.get("max_bytes", 5_000_000)), 1), _PROXY_MAX_BYTES)
         auth = None
         if payload.get("username") is not None:
             auth = aiohttp.BasicAuth(
@@ -335,7 +370,22 @@ class TaskExecutor:
                     data=body,
                     auth=auth,
                     timeout=aiohttp.ClientTimeout(total=req_timeout),
-                    allow_redirects=True,
+                    # NOT followed. The controller chooses the URL; the TARGET
+                    # chooses the redirect, and this agent exists precisely
+                    # because it can reach a network the controller cannot. So
+                    # following a redirect turns "fetch this camera's status
+                    # page" into "fetch whatever that camera names" -- anywhere
+                    # on the agent's LAN, or cloud metadata. That is the
+                    # redirect-based SSRF bypass the backend's own client
+                    # disables for the same reason (security_utils.py:358,
+                    # plugins/sdk.py:1771), and the agent is the more valuable
+                    # pivot of the two.
+                    #
+                    # Nothing is lost: the 3xx and its Location header are
+                    # returned to the controller, which can issue a second
+                    # proxy_http for the new URL if that is what it wants. The
+                    # decision moves to the party that is actually trusted.
+                    allow_redirects=False,
                 ) as resp:
                     raw = await resp.content.read(max_bytes + 1)
                     return {

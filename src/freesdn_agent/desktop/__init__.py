@@ -16,8 +16,8 @@ all); they only activate when ``freesdn_agent.main:main`` runs.
 
 from freesdn_agent.desktop.crash_handler import install_crash_handler
 from freesdn_agent.desktop.single_instance import (
-    acquire_single_instance,
     SingleInstanceLock,
+    acquire_single_instance,
 )
 
 __all__ = [

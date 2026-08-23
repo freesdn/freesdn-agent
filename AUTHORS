@@ -1,0 +1,26 @@
+FreeSDN Agent - Authors and Attribution
+=======================================
+
+This is a PyPV project.
+
+    PyPV - Python Platform Ventures
+    https://pypv.com
+
+PyPV is the sole author, copyright holder and maintainer. All code in this
+repository was written by PyPV unless a file header states otherwise.
+
+Copyright (C) 2024-2026 PyPV - Python Platform Ventures
+Licensed under the MIT License. See LICENSE for the full text.
+
+Note the license split across the FreeSDN project: the controller
+(github.com/freesdn/freesdn) is AGPL-3.0-only, while this repository is MIT so it
+can be embedded and redistributed freely.
+
+    Controller  https://github.com/freesdn/freesdn   AGPL-3.0-only
+    Website     https://freesdn.org
+    Docs        https://docs.freesdn.org
+
+Contributions are welcome; contributors who land changes will be credited here.
+This repository is published from a private monorepo by a one-way flatten, so a
+pull request merged here directly would be reverted by the next release. See the
+controller repository's CONTRIBUTING.md.

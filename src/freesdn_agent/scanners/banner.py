@@ -5,14 +5,14 @@ Connects to SSH and Telnet services to grab identification banners.
 """
 
 import logging
-import socket
 import re
-from typing import Optional, Generator, Callable, List, Dict
-from dataclasses import dataclass, field
-from datetime import datetime
+import socket
+from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import datetime
 
-from freesdn_agent.scanners.base import BaseScanner, ScanResult, ScanProgress, DeviceType
+from freesdn_agent.scanners.base import BaseScanner, DeviceType, ScanProgress, ScanResult
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +33,26 @@ SSH_SIGNATURES = [
     {"pattern": r"edgeos|vyatta|vyos", "vendor": "Ubiquiti/VyOS", "type": DeviceType.ROUTER},
     {"pattern": r"brocade", "vendor": "Brocade", "type": DeviceType.SWITCH},
     {"pattern": r"extreme", "vendor": "Extreme", "type": DeviceType.SWITCH},
-    
+
     # NAS devices
     {"pattern": r"synology", "vendor": "Synology", "type": DeviceType.SERVER},
     {"pattern": r"qnap", "vendor": "QNAP", "type": DeviceType.SERVER},
     {"pattern": r"freenas|truenas", "vendor": "TrueNAS", "type": DeviceType.SERVER},
-    
+
     # Linux distributions (servers)
     {"pattern": r"ubuntu", "vendor": "Ubuntu", "type": DeviceType.SERVER},
     {"pattern": r"debian", "vendor": "Debian", "type": DeviceType.SERVER},
     {"pattern": r"centos|rhel|red\s*hat", "vendor": "RedHat", "type": DeviceType.SERVER},
     {"pattern": r"openssh", "vendor": None, "type": DeviceType.SERVER},
-    
+
     # Cameras
     {"pattern": r"hikvision", "vendor": "Hikvision", "type": DeviceType.CAMERA},
     {"pattern": r"dahua", "vendor": "Dahua", "type": DeviceType.CAMERA},
     {"pattern": r"axis", "vendor": "Axis", "type": DeviceType.CAMERA},
-    
+
     # IoT
     {"pattern": r"dropbear", "vendor": None, "type": DeviceType.IOT_DEVICE},
-    
+
     # VoIP
     {"pattern": r"sangoma|digium", "vendor": "Sangoma", "type": DeviceType.VOIP_PHONE},
     {"pattern": r"polycom", "vendor": "Polycom", "type": DeviceType.VOIP_PHONE},
@@ -80,24 +80,24 @@ class BannerResult:
     ip_address: str
     port: int
     service: str  # "ssh" or "telnet"
-    banner: Optional[str] = None
-    version: Optional[str] = None
-    os_info: Optional[str] = None
-    response_time_ms: Optional[float] = None
+    banner: str | None = None
+    version: str | None = None
+    os_info: str | None = None
+    response_time_ms: float | None = None
 
 
 class BannerScanner(BaseScanner):
     """
     SSH/Telnet Banner Scanner.
-    
+
     Connects to SSH (22) and Telnet (23) services to grab
     identification banners for device classification.
     """
-    
+
     SCANNER_NAME = "banner"
     DISPLAY_NAME = "SSH/Telnet Banner Scanner"
     REQUIRES_ROOT = False
-    
+
     def __init__(
         self,
         timeout: float = 5.0,
@@ -109,7 +109,7 @@ class BannerScanner(BaseScanner):
     ):
         """
         Initialize banner scanner.
-        
+
         Args:
             timeout: Connection timeout
             concurrency: Max concurrent connections
@@ -123,26 +123,26 @@ class BannerScanner(BaseScanner):
         self.scan_telnet = scan_telnet
         self.ssh_port = ssh_port
         self.telnet_port = telnet_port
-    
+
     def scan(
         self,
-        targets: List[str],
-        interface: Optional[str] = None,
-        progress_callback: Optional[Callable[[ScanProgress], None]] = None,
+        targets: list[str],
+        interface: str | None = None,
+        progress_callback: Callable[[ScanProgress], None] | None = None,
     ) -> Generator[ScanResult, None, None]:
         """
         Scan targets for SSH/Telnet banners.
-        
+
         Args:
             targets: IP addresses to scan
             interface: Not used
             progress_callback: Progress callback
-            
+
         Yields:
             ScanResult for each host with banners
         """
         self.reset()
-        
+
         # Build endpoint list
         endpoints = []
         for ip in targets:
@@ -150,38 +150,38 @@ class BannerScanner(BaseScanner):
                 endpoints.append((ip, self.ssh_port, "ssh"))
             if self.scan_telnet:
                 endpoints.append((ip, self.telnet_port, "telnet"))
-        
+
         total = len(endpoints)
         completed = 0
         devices_found = 0
-        
+
         # Group results by IP
-        results_by_ip: Dict[str, List[BannerResult]] = {}
-        
+        results_by_ip: dict[str, list[BannerResult]] = {}
+
         logger.info(f"Starting banner scan of {len(targets)} hosts")
-        
+
         start_time = datetime.now()
-        
+
         if progress_callback:
             progress_callback(ScanProgress(
                 scanner_name=self.SCANNER_NAME,
                 status="starting",
                 progress=0,
             ))
-        
+
         with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
             futures = {
                 executor.submit(self._grab_banner, ip, port, service): (ip, port, service)
                 for ip, port, service in endpoints
             }
-            
+
             for future in as_completed(futures):
                 if self._cancelled:
                     break
-                
+
                 completed += 1
                 ip, port, service = futures[future]
-                
+
                 try:
                     result = future.result()
                     if result and result.banner:
@@ -190,7 +190,7 @@ class BannerScanner(BaseScanner):
                         results_by_ip[ip].append(result)
                 except Exception as e:
                     logger.debug(f"Error grabbing banner from {ip}:{port}: {e}")
-                
+
                 if progress_callback and completed % 20 == 0:
                     elapsed = (datetime.now() - start_time).total_seconds()
                     progress_callback(ScanProgress(
@@ -201,15 +201,15 @@ class BannerScanner(BaseScanner):
                         devices_found=len(results_by_ip),
                         elapsed_seconds=elapsed,
                     ))
-        
+
         # Convert to ScanResults
         for ip, banner_results in results_by_ip.items():
             if self._cancelled:
                 break
-            
+
             device_info = self._analyze_banners(banner_results)
             devices_found += 1
-            
+
             yield ScanResult(
                 ip_address=ip,
                 device_type=device_info.get("type", DeviceType.UNKNOWN),
@@ -230,7 +230,7 @@ class BannerScanner(BaseScanner):
                     "telnet_available": any(r.service == "telnet" for r in banner_results),
                 },
             )
-        
+
         if progress_callback:
             elapsed = (datetime.now() - start_time).total_seconds()
             progress_callback(ScanProgress(
@@ -240,37 +240,37 @@ class BannerScanner(BaseScanner):
                 devices_found=devices_found,
                 elapsed_seconds=elapsed,
             ))
-        
+
         logger.info(f"Banner scan completed: {devices_found} hosts with banners")
-    
-    def _grab_banner(self, ip: str, port: int, service: str) -> Optional[BannerResult]:
+
+    def _grab_banner(self, ip: str, port: int, service: str) -> BannerResult | None:
         """
         Grab banner from a single service.
-        
+
         Args:
             ip: Target IP
             port: Target port
             service: "ssh" or "telnet"
-            
+
         Returns:
             BannerResult or None
         """
         start_time = datetime.now()
-        
+
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self.timeout)
             sock.connect((ip, port))
-            
+
             response_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             if service == "ssh":
                 banner = self._grab_ssh_banner(sock)
             else:
                 banner = self._grab_telnet_banner(sock)
-            
+
             sock.close()
-            
+
             if banner:
                 result = BannerResult(
                     ip_address=ip,
@@ -279,24 +279,24 @@ class BannerScanner(BaseScanner):
                     banner=banner,
                     response_time_ms=response_time,
                 )
-                
+
                 # Extract version info
                 if service == "ssh":
                     result.version = self._extract_ssh_version(banner)
-                
+
                 return result
-            
+
             return None
-            
-        except socket.timeout:
+
+        except TimeoutError:
             return None
         except ConnectionRefusedError:
             return None
         except Exception as e:
             logger.debug(f"Banner grab error for {ip}:{port}: {e}")
             return None
-    
-    def _grab_ssh_banner(self, sock: socket.socket) -> Optional[str]:
+
+    def _grab_ssh_banner(self, sock: socket.socket) -> str | None:
         """Grab SSH identification banner."""
         try:
             # SSH sends banner immediately on connect
@@ -310,13 +310,13 @@ class BannerScanner(BaseScanner):
         except Exception as e:
             logger.debug(f"SSH banner error: {e}")
             return None
-    
-    def _grab_telnet_banner(self, sock: socket.socket) -> Optional[str]:
+
+    def _grab_telnet_banner(self, sock: socket.socket) -> str | None:
         """Grab Telnet login banner."""
         try:
             # Telnet may send negotiation bytes first
             # Try to read until we get something text-like
-            
+
             all_data = b""
             for _ in range(5):  # Multiple reads for negotiation
                 try:
@@ -324,9 +324,9 @@ class BannerScanner(BaseScanner):
                     if not data:
                         break
                     all_data += data
-                except socket.timeout:
+                except TimeoutError:
                     break
-            
+
             if all_data:
                 # Strip telnet negotiation bytes (IAC = 0xFF)
                 text = b""
@@ -338,36 +338,36 @@ class BannerScanner(BaseScanner):
                     else:
                         text += bytes([all_data[i]])
                         i += 1
-                
+
                 banner_str = text.decode('utf-8', errors='ignore').strip()
-                
+
                 # Clean up and limit length
                 banner_str = re.sub(r'\s+', ' ', banner_str)[:500]
-                
+
                 if len(banner_str) > 5:  # Must have some content
                     return banner_str
-            
+
             return None
-            
+
         except Exception as e:
             logger.debug(f"Telnet banner error: {e}")
             return None
-    
-    def _extract_ssh_version(self, banner: str) -> Optional[str]:
+
+    def _extract_ssh_version(self, banner: str) -> str | None:
         """Extract SSH version from banner."""
         # Format: SSH-2.0-OpenSSH_8.4
         match = re.match(r'SSH-(\d\.\d)-(.+)', banner)
         if match:
             return match.group(2)
         return None
-    
-    def _analyze_banners(self, results: List[BannerResult]) -> Dict:
+
+    def _analyze_banners(self, results: list[BannerResult]) -> dict:
         """
         Analyze banners to identify device.
-        
+
         Args:
             results: Banner results for one host
-            
+
         Returns:
             Dict with device info
         """
@@ -375,19 +375,19 @@ class BannerScanner(BaseScanner):
             "type": DeviceType.UNKNOWN,
             "vendor": None,
         }
-        
+
         for result in results:
             if not result.banner:
                 continue
-            
+
             banner_lower = result.banner.lower()
             signatures = SSH_SIGNATURES if result.service == "ssh" else TELNET_SIGNATURES
-            
+
             for sig in signatures:
                 if re.search(sig["pattern"], banner_lower, re.I):
                     info["type"] = sig["type"]
                     if sig["vendor"]:
                         info["vendor"] = sig["vendor"]
                     return info  # First match wins
-        
+
         return info

@@ -15,14 +15,15 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import pytest
-
-
 # Load the pure-data module directly so the widgets package's
 # QtWidgets imports don't drag PySide6 into the test process.
 _INV_DATA_PATH = (
     Path(__file__).resolve().parents[1]
-    / "src" / "freesdn_agent" / "ui" / "widgets" / "inventory_data.py"
+    / "src"
+    / "freesdn_agent"
+    / "ui"
+    / "widgets"
+    / "inventory_data.py"
 )
 _spec = importlib.util.spec_from_file_location("_inv_data", _INV_DATA_PATH)
 _inv_data = importlib.util.module_from_spec(_spec)
@@ -108,7 +109,7 @@ class TestMergeIntoInventory:
         managed = _managed(
             name="proxmox-lab",
             ip_address="192.168.1.150",
-            mac_address=None,          # hypervisor rows have no MAC
+            mac_address=None,  # hypervisor rows have no MAC
             device_type="hypervisor",
         )
         discovered = _discovered(
@@ -153,8 +154,13 @@ class TestMergeIntoInventory:
             id="dh-x",
             ip_address="192.168.1.105",
             mac_address="AA:BB:CC:DD:EE:02",
-            known_as={"kind": "device", "name": "gl-router", "detail": "router",
-                      "ref_type": "device", "ref_id": "d-1"},
+            known_as={
+                "kind": "device",
+                "name": "gl-router",
+                "detail": "router",
+                "ref_type": "device",
+                "ref_id": "d-1",
+            },
         )
         rows = merge_into_inventory([managed], [host])
         assert len(rows) == 1
@@ -173,14 +179,16 @@ class TestMergeIntoInventory:
             [
                 _managed(),
                 _managed(
-                    id="dev-2", ip_address="192.168.1.10",
+                    id="dev-2",
+                    ip_address="192.168.1.10",
                     mac_address="11:22:33:44:55:66",
                 ),
             ],
             [
                 _discovered(),
                 _discovered(
-                    id="dh-3", ip_address="192.168.1.3",
+                    id="dh-3",
+                    ip_address="192.168.1.3",
                     mac_address="77:88:99:AA:BB:CC",
                 ),
             ],

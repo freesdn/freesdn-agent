@@ -26,9 +26,7 @@ def _keypair_and_sign(digest_hex: str) -> tuple[bytes, str]:
         serialization.Encoding.PEM,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    sig = base64.b64encode(
-        priv.sign(bytes.fromhex(digest_hex), ec.ECDSA(hashes.SHA256()))
-    ).decode()
+    sig = base64.b64encode(priv.sign(bytes.fromhex(digest_hex), ec.ECDSA(hashes.SHA256()))).decode()
     return pub_pem, sig
 
 
@@ -98,9 +96,7 @@ class TestPublicKeyPinning:
         monkeypatch.setattr(cfg.Config, "get_config_dir", classmethod(lambda cls: tmp_path))
         good_pem, _ = _keypair_and_sign(DIGEST)
         # Persist the GOOD key fingerprint as the TOFU pin.
-        (tmp_path / "release_signing_key.sha256").write_text(
-            _h.sha256(good_pem).hexdigest()
-        )
+        (tmp_path / "release_signing_key.sha256").write_text(_h.sha256(good_pem).hexdigest())
         evil_pem, evil_sig = _keypair_and_sign(DIGEST)  # attacker key + its signature
         svc = _svc(release_public_key_sha256=None)
         svc._cached_public_key_pem = evil_pem

@@ -12,7 +12,7 @@ import asyncio
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from freesdn_agent.listeners.base import BaseListener
@@ -51,9 +51,8 @@ DEDUP_WINDOW = 300  # 5 minutes
 def _parse_dhcp_packet(pkt) -> dict[str, Any] | None:
     """Extract DHCP fields from a scapy packet."""
     try:
-        from scapy.layers.dhcp import DHCP, BOOTP
+        from scapy.layers.dhcp import BOOTP, DHCP
         from scapy.layers.l2 import Ether
-        from scapy.layers.inet import IP, UDP
 
         if BOOTP not in pkt:
             return None
@@ -168,7 +167,7 @@ class DHCPWatcher(BaseListener):
                 "hostname": parsed.get("hostname", ""),
                 "vendor_class": parsed.get("vendor_class", ""),
                 "dhcp_message": parsed.get("message_type_name", ""),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
             fut = asyncio.run_coroutine_threadsafe(
                 self._report("device_event", payload),

@@ -2,7 +2,7 @@
 Application constants for FreeSDN Agent.
 """
 
-from freesdn_agent import __version__, __app_name__
+from freesdn_agent import __app_name__, __version__
 
 # Application Info
 APP_NAME = __app_name__

@@ -30,13 +30,11 @@ from __future__ import annotations
 import ipaddress
 import logging
 import re
-from typing import Optional
 
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont, QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -117,7 +115,7 @@ def _validate_target(spec: str) -> str:
     if "-" in spec and "/" not in spec:
         left, _, right = spec.partition("-")
         try:
-            left_ip = ipaddress.ip_address(left.strip())
+            ipaddress.ip_address(left.strip())  # validates; value unused
         except ValueError as exc:
             raise ValueError(f"bad range start: {exc}") from exc
 
@@ -229,7 +227,7 @@ class MultiTargetSelector(QFrame):
 
     targets_changed = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._interfaces: list[dict] = []
         self._is_wide: bool | None = None  # tracks current layout mode

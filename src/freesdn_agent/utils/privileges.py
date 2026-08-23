@@ -4,50 +4,105 @@ Privilege checking utilities for FreeSDN Agent.
 Raw socket operations (ARP scanning) require administrator/root privileges.
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 
 logger = logging.getLogger(__name__)
 
 
-def check_admin_privileges() -> bool:
+#: Linux capability number for CAP_NET_RAW (linux/capability.h).
+_CAP_NET_RAW = 13
+
+
+def _linux_has_cap_net_raw() -> bool:
+    """Does this process hold CAP_NET_RAW, without being root?
+
+    Reads the effective capability set from ``/proc/self/status``. The kernel
+    prints it as a 16-hex-digit mask, one bit per capability.
+
+    This exists because the agent's OWN SHIPPED DEPLOYMENT is exactly this case.
+    ``packaging/installers/build_deb.sh`` writes a unit with::
+
+        User=freesdn-agent
+        AmbientCapabilities=CAP_NET_RAW
+
+    A euid check calls that unprivileged, so the .deb install advertised no ARP
+    scanner and skipped every REQUIRES_ROOT listener -- including passive LLDP,
+    the daemon's topology source -- while holding the one capability those need.
+    Dropping root and granting a single capability is the correct way to run
+    this, and the privilege check punished it.
     """
-    Check if the application has administrator/root privileges.
-    
-    Returns:
-        True if running with elevated privileges, False otherwise.
+    try:
+        with open("/proc/self/status", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("CapEff:"):
+                    mask = int(line.split(":", 1)[1].strip(), 16)
+                    return bool(mask >> _CAP_NET_RAW & 1)
+    except (OSError, ValueError):
+        # No procfs, or a shape we do not recognise. Fall back to the euid
+        # check rather than guessing upward: claiming a capability we cannot
+        # prove would turn a clean "skipped, no privilege" into a scanner that
+        # fails at the socket.
+        pass
+    return False
+
+
+def has_raw_socket_capability() -> bool:
+    """Can this process open raw sockets?
+
+    The single answer for the whole agent. Three modules used to ask this
+    separately (``utils.privileges``, ``listeners.base``, ``services.capabilities``)
+    and all three asked ``os.geteuid() == 0``, which is wrong for the packaged
+    Linux deployment and had to be fixed in three places to be fixed at all.
     """
     if sys.platform == "win32":
-        # Windows: Check if running as administrator
         try:
             import ctypes
+
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
         except Exception as e:
             logger.warning(f"Failed to check Windows admin status: {e}")
             return False
-    else:
-        # Unix/Linux/macOS: Check if running as root
-        return os.geteuid() == 0
+
+    try:
+        if os.geteuid() == 0:
+            return True
+    except AttributeError:
+        return False
+
+    # Not root. On Linux a capability alone is enough, and is how we ship.
+    if sys.platform.startswith("linux"):
+        return _linux_has_cap_net_raw()
+    return False
+
+
+def check_admin_privileges() -> bool:
+    """
+    Check whether the agent can perform privileged network operations.
+
+    Kept as the historical name; ``has_raw_socket_capability`` is what it means.
+    """
+    return has_raw_socket_capability()
 
 
 def request_elevation() -> bool:
     """
     Request elevation of privileges (Windows only).
-    
+
     On Windows, this will trigger a UAC prompt to restart with admin rights.
     On Unix systems, users should run with sudo manually.
-    
+
     Returns:
         True if elevation was requested (Windows), False otherwise.
     """
     if sys.platform == "win32":
         try:
             import ctypes
-            
+
             # Get the Python executable path
             python_exe = sys.executable
-            
+
             # Build the command arguments
             # When running as a module (-m), we need to handle it properly
             if len(sys.argv) > 0 and sys.argv[0].endswith('__main__.py'):
@@ -56,7 +111,7 @@ def request_elevation() -> bool:
                 # Get the src directory from the module path
                 import freesdn_agent
                 module_dir = os.path.dirname(os.path.dirname(freesdn_agent.__file__))
-                
+
                 # Create a batch file to set env and run - this is more reliable
                 import tempfile
                 batch_content = f'''@echo off
@@ -83,7 +138,7 @@ set PYTHONPATH={module_dir}
                     f.write(batch_content)
 
                 logger.info(f"Requesting elevation via batch: {batch_path}")
-                
+
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None,
                     "runas",
@@ -101,10 +156,10 @@ set PYTHONPATH={module_dir}
                         quoted_args.append(f'"{arg}"')
                     else:
                         quoted_args.append(arg)
-                
+
                 params = ' '.join(quoted_args)
                 logger.info(f"Requesting elevation: {python_exe} {params}")
-                
+
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None,
                     "runas",
@@ -122,10 +177,10 @@ set PYTHONPATH={module_dir}
                         quoted_args.append(f'"{arg}"')
                     else:
                         quoted_args.append(arg)
-                
+
                 params = ' '.join(quoted_args)
                 logger.info(f"Requesting elevation: {python_exe} {params}")
-                
+
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None,
                     "runas",
@@ -134,7 +189,7 @@ set PYTHONPATH={module_dir}
                     None,
                     1  # SW_SHOWNORMAL
                 )
-            
+
             # ShellExecuteW returns > 32 on success
             if result > 32:
                 logger.info("Elevation requested successfully")
@@ -142,7 +197,7 @@ set PYTHONPATH={module_dir}
             else:
                 logger.error(f"ShellExecuteW failed with code: {result}")
                 return False
-            
+
         except Exception as e:
             logger.error(f"Failed to request elevation: {e}")
             import traceback
@@ -156,13 +211,13 @@ set PYTHONPATH={module_dir}
 def show_privilege_warning(parent=None) -> None:
     """
     Show a warning dialog about limited functionality without admin privileges.
-    
+
     Args:
         parent: Parent widget for the dialog (optional)
     """
     try:
         from PySide6.QtWidgets import QMessageBox
-        
+
         msg = QMessageBox(parent)
         msg.setIcon(QMessageBox.Warning)
         msg.setWindowTitle("Limited Functionality")
@@ -172,26 +227,26 @@ def show_privilege_warning(parent=None) -> None:
             "privileges to access raw network sockets.\n\n"
             "For full functionality, please restart the application as administrator."
         )
-        
+
         if sys.platform == "win32":
             msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Retry)
             msg.setDefaultButton(QMessageBox.Ok)
             msg.button(QMessageBox.Retry).setText("Restart as Admin")
-            
+
             result = msg.exec()
-            
+
             if result == QMessageBox.Retry:
                 if request_elevation():
                     # Elevation requested, close this instance
                     sys.exit(0)
         else:
             msg.setInformativeText(
-                msg.informativeText() + 
+                msg.informativeText() +
                 "\n\nOn Linux/macOS, run with: sudo python -m freesdn_agent"
             )
             msg.setStandardButtons(QMessageBox.Ok)
             msg.exec()
-            
+
     except ImportError:
         # Qt not available, just log
         logger.warning(

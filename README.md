@@ -32,9 +32,13 @@ agent. Per-agent Prometheus metrics are also available.
 
 ## Install
 
-Download the installer for your platform from the
+Download from the
 [Releases page](https://github.com/freesdn/freesdn-agent/releases).
-Every release is signed - see [Signed releases](#signed-releases) below.
+Verify what you downloaded before running it - see
+[Release integrity](#release-integrity) below.
+
+Linux gets a Debian package; Windows and macOS ship as standalone binaries.
+There is no MSI and no `.pkg` installer yet.
 
 **Linux (deb)**
 
@@ -44,22 +48,29 @@ sudo freesdn-agent register --server https://freesdn.example.com --site-id <uuid
 sudo systemctl enable --now freesdn-agent
 ```
 
-**Windows (MSI)**
+The package installs a systemd unit that runs as a dedicated `freesdn-agent`
+service user with `AmbientCapabilities=CAP_NET_RAW`, not as root.
+
+**Windows (standalone binary)**
 
 ```powershell
-# Run the MSI installer, then register:
-freesdn-agent register --server https://freesdn.example.com --site-id <uuid>
-# Run in the foreground to verify, or install it as a Windows service - see DEPLOYMENT.md.
-freesdn-agent daemon
+# Download win64-freesdn-agent.exe (or win64-freesdn-agent-gui.exe), then:
+.\win64-freesdn-agent.exe register --server https://freesdn.example.com --site-id <uuid>
+# Run in the foreground to verify. To run it as a Windows service, see DEPLOYMENT.md.
+.\win64-freesdn-agent.exe daemon
 ```
 
-**macOS (pkg)**
+**macOS (standalone binary)**
 
 ```bash
-sudo installer -pkg freesdn-agent-*.pkg -target /
-sudo freesdn-agent register --server https://freesdn.example.com --site-id <uuid>
-sudo launchctl load -w /Library/LaunchDaemons/com.freesdn.agent.plist
+chmod +x macos-freesdn-agent
+sudo ./macos-freesdn-agent register --server https://freesdn.example.com --site-id <uuid>
+sudo ./macos-freesdn-agent daemon
 ```
+
+macOS binaries are not notarised, so Gatekeeper will block the first run.
+Clear the quarantine attribute yourself if you accept that:
+`xattr -d com.apple.quarantine macos-freesdn-agent`.
 
 The `register` command prompts for your FreeSDN admin credentials, creates the
 agent row in the backend, and stores the API key in the OS keyring (Windows
@@ -68,14 +79,30 @@ written to the config file on disk.
 
 After registering, approve the agent in the web UI under Site - Agent tab.
 
-## Signed releases
+## Release integrity
 
-Every release binary is signed with ECDSA-P256. The agent verifies the
-signature on every auto-update before staging the new binary. The public
-verification key is served by your FreeSDN instance at
-`GET /api/v1/agents/releases/public-key` and is independent of the download
-itself, so a compromised download source cannot swap binary and signature
-together without also controlling the signing key.
+Two different mechanisms protect two different paths. Do not confuse them.
+
+**Downloads from this Releases page are checksummed, not signed.** Every
+binary has a `.sha256` sidecar, and a combined `SHA256SUMS.txt` covers all of
+the release assets including the `.deb` and the SBOM. Verify with:
+
+```bash
+sha256sum -c SHA256SUMS.txt
+```
+
+There are no detached signatures, no cosign bundles and no PGP signatures on
+these artifacts. A checksum served from the same host as the file it describes
+proves the download was not corrupted; it does not prove the host was not
+compromised.
+
+**The in-app auto-update feed is genuinely signed.** When your own FreeSDN
+instance serves a release to the agents it manages, it signs the binary with
+ECDSA-P256 and the agent verifies that signature before staging the update. The
+verification key is served by your instance at
+`GET /api/v1/agents/releases/public-key`, independent of the binary itself, so a
+compromised download source cannot swap binary and signature together without
+also controlling the signing key.
 
 ## CLI quick reference
 
