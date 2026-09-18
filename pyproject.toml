@@ -59,7 +59,7 @@ dependencies = [
     "psutil==7.2.2",
 
     # Async
-    "anyio==4.14.1",
+    "anyio==4.14.2",
 
     # Security-pinned transitives (Dependabot GHSA fixes). These are pulled in
     # transitively; pinned explicitly here to force the patched versions into the
@@ -86,7 +86,7 @@ daemon = [
     "appdirs==1.4.4",
     "mac-vendor-lookup==0.1.15",
     "psutil==7.2.2",
-    "anyio==4.14.1",
+    "anyio==4.14.2",
     # Security-pinned transitives (Dependabot GHSA fixes) — keep in sync with the
     # main dependencies list above and requirements.txt.
     "cryptography==50.0.0",
