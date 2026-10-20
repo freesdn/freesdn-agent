@@ -67,7 +67,7 @@ dependencies = [
     # and run the agent test suite after any change here.
     "cryptography==50.0.0",  # GHSA: high
     "pyasn1==0.6.4",         # GHSA: high (3x BER/DER decoder DoS) - pysnmp only floors >=0.6.3
-    "aiohttp==3.14.3",       # GHSA: high
+    "aiohttp==3.14.4",       # GHSA: high
 ]
 
 [project.optional-dependencies]
@@ -91,7 +91,7 @@ daemon = [
     # main dependencies list above and requirements.txt.
     "cryptography==50.0.0",
     "pyasn1==0.6.4",
-    "aiohttp==3.14.3",
+    "aiohttp==3.14.4",
 ]
 # Optional L2 capture: ARP scan + LLDP/CDP/DHCP passive discovery.
 # scapy is GPL-2.0-only — installing this extra subjects that deployment to
